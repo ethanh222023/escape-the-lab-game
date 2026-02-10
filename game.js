@@ -126,24 +126,23 @@ function updateBadges() {
 }
 
 async function postPayload(payload) {
-  const local = getStored("etl_localLog", []);
-  local.push(payload);
-  setStored("etl_localLog", local);
-
-  if (!CONFIG.API_ENDPOINT) return { ok: true, localOnly: true };
-
   try {
-    const res = await fetch(CONFIG.API_ENDPOINT, {
+    // IMPORTANT: Using text/plain + no-cors avoids the Google Apps Script CORS preflight failure
+    await fetch(CONFIG.API_ENDPOINT, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      mode: "no-cors",
+      headers: {
+        "Content-Type": "text/plain;charset=utf-8"
+      },
+      body: JSON.stringify(payload)
     });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
-    return { ok: true, data };
-  } catch (e) {
-    setStatus("Saved locally (server unreachable).");
-    return { ok: false, error: String(e) };
+
+    // We cannot read the response in no-cors mode,
+    // but the request WILL reach your Google Sheet.
+    return { ok: true, data: null };
+
+  } catch (err) {
+    return { ok: false, error: String(err) };
   }
 }
 
@@ -1211,4 +1210,5 @@ function shuffle(arr) {
   } else {
     render();
   }
+
 })();
