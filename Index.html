@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Escape the Lab</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div class="title">Escape the Lab</div>
+      <div class="meta">
+        <span id="playerBadge" class="badge">Player: —</span>
+        <span id="roomBadge" class="badge">Room: 1</span>
+      </div>
+    </header>
+
+    <main class="main">
+      <section id="screen" class="screen"></section>
+
+      <aside class="panel">
+        <div id="panelTitle" class="panel-title">Mission Panel</div>
+        <div id="panelBody" class="panel-body"></div>
+        <div id="panelActions" class="panel-actions"></div>
+      </aside>
+    </main>
+
+    <footer class="footer">
+      <div id="status" class="status">Status: Ready.</div>
+      <div class="small">Prototype build. No lasers were harmed in the making of this lab.</div>
+    </footer>
+  </div>
+
+  <div id="modalBackdrop" class="modal-backdrop hidden">
+    <div class="modal">
+      <div id="modalTitle" class="modal-title"></div>
+      <div id="modalBody" class="modal-body"></div>
+      <div class="modal-actions">
+        <button id="modalCancel" class="btn secondary hidden">Cancel</button>
+        <button id="modalOk" class="btn primary">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>

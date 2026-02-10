@@ -1,0 +1,256 @@
+:root {
+  --bg: #0b0f14;
+  --panel: #121a23;
+  --card: #0f1620;
+  --text: #e7eef7;
+  --muted: #9fb0c3;
+  --accent: #6ee7ff;
+  --danger: #ff5c7a;
+  --ok: #6bff9c;
+  --border: rgba(255,255,255,0.08);
+  --shadow: rgba(0,0,0,0.35);
+  --radius: 16px;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: var(--sans);
+  background: radial-gradient(1000px 700px at 20% 0%, rgba(110,231,255,0.12), transparent 60%),
+              radial-gradient(900px 600px at 90% 10%, rgba(255,92,122,0.10), transparent 55%),
+              var(--bg);
+  color: var(--text);
+}
+
+#app { max-width: 1100px; margin: 0 auto; padding: 18px; }
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(18,26,35,0.7);
+  box-shadow: 0 10px 20px var(--shadow);
+  backdrop-filter: blur(10px);
+}
+
+.title { font-weight: 800; letter-spacing: 0.4px; }
+.meta { display: flex; gap: 10px; align-items: center; }
+.badge {
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  background: rgba(15,22,32,0.85);
+}
+
+.main {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.screen, .panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(15,22,32,0.75);
+  box-shadow: 0 10px 20px var(--shadow);
+  backdrop-filter: blur(10px);
+}
+
+.screen { padding: 16px; min-height: 520px; }
+.panel { padding: 16px; min-height: 520px; }
+
+.panel-title { font-weight: 700; margin-bottom: 10px; }
+.panel-body { color: var(--muted); line-height: 1.35; }
+.panel-actions { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 10px; }
+
+.footer { margin-top: 14px; display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: 12px; }
+.status { font-family: var(--mono); }
+
+.card {
+  border: 1px solid var(--border);
+  background: rgba(18,26,35,0.55);
+  border-radius: 14px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.h1 { font-size: 20px; font-weight: 800; margin: 0 0 8px; }
+.p  { color: var(--muted); margin: 0 0 10px; }
+
+.btn {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(18,26,35,0.8);
+  color: var(--text);
+  cursor: pointer;
+  transition: transform 0.05s ease, border-color 0.15s ease;
+  user-select: none;
+}
+.btn:hover { border-color: rgba(110,231,255,0.35); }
+.btn:active { transform: translateY(1px); }
+.btn.primary { border-color: rgba(110,231,255,0.35); }
+.btn.secondary { border-color: rgba(255,255,255,0.12); }
+.btn.danger { border-color: rgba(255,92,122,0.4); }
+.btn.ok { border-color: rgba(107,255,156,0.35); }
+
+.kbd {
+  font-family: var(--mono);
+  padding: 2px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(0,0,0,0.25);
+  color: var(--text);
+}
+
+.grid { display: grid; gap: 10px; }
+.grid.two { grid-template-columns: repeat(2, 1fr); }
+.grid.three { grid-template-columns: repeat(3, 1fr); }
+
+.terminal {
+  font-family: var(--mono);
+  background: rgba(0,0,0,0.35);
+  border: 1px solid rgba(110,231,255,0.25);
+  border-radius: 14px;
+  padding: 12px;
+  color: #d6f7ff;
+  line-height: 1.3;
+}
+
+.input, textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(0,0,0,0.25);
+  color: var(--text);
+  outline: none;
+}
+textarea { min-height: 90px; resize: vertical; }
+
+.hidden { display: none !important; }
+
+.modal-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.65);
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+.modal {
+  max-width: 620px;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(18,26,35,0.95);
+  box-shadow: 0 20px 40px rgba(0,0,0,0.6);
+  padding: 16px;
+}
+.modal-title { font-weight: 800; margin-bottom: 10px; }
+.modal-body { color: var(--muted); line-height: 1.35; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px; }
+
+.small { opacity: 0.85; }
+
+.puzzle-hint { color: var(--muted); font-size: 13px; margin-top: 8px; }
+.success { color: var(--ok); }
+.fail { color: var(--danger); }
+
+/* --- Mini-game UI additions --- */
+.game-hud {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 10px 0 12px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.hud-pill {
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(0,0,0,0.25);
+}
+
+.simon-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-top: 12px;
+}
+/* --- Simon tweaks: brighter + unmistakable "lit" --- */
+.simon-btn {
+  height: 120px;          /* <-- PUT THIS BACK */
+  width: 100%;            /* <-- ensures full grid cell */
+  opacity: 0.95;
+  filter: saturate(1.35) brightness(1.05);
+  border-width: 2px;
+  border-radius: 18px;    /* <-- ensure chunky buttons */
+}
+.simon-red    { background: rgb(255, 60, 90); }
+.simon-blue   { background: rgb(50, 180, 255); }
+.simon-green  { background: rgb(50, 255, 140); }
+.simon-yellow { background: rgb(255, 220, 70); }
+
+.simon-btn.lit {
+  opacity: 1;
+  filter: saturate(2.4) brightness(1.55);
+  box-shadow:
+    0 0 0 3px rgba(255,255,255,0.22),
+    0 0 26px rgba(110,231,255,0.35),
+    0 0 40px rgba(255,255,255,0.10);
+}
+.word-card {
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 28px;
+  padding: 28px 12px;
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: rgba(0,0,0,0.25);
+}
+
+.big-answer {
+  font-family: var(--mono);
+  font-size: 22px;
+  text-align: center;
+  padding: 18px 12px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: rgba(0,0,0,0.25);
+}
+
+.memory-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-top: 12px;
+}
+.mem-card {
+  height: 70px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: rgba(18,26,35,0.8);
+  color: var(--text);
+  cursor: pointer;
+  font-family: var(--mono);
+}
+.mem-card.revealed { background: rgba(110,231,255,0.18); }
+.mem-card.matched { opacity: 0.35; cursor: default; }
+
+/* Make terminal/question modals scroll so buttons aren't cut off */
+.modal-body {
+  max-height: 65vh;
+  overflow-y: auto;
+  padding-right: 6px;
+}
