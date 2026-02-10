@@ -12,6 +12,10 @@
    10) Math race best updates correctly
    11) Questions modal scroll (CSS)
    12) Final recap: buttons for each game to replay without questions
+
+   Upload policy:
+   - Buffer everything locally during gameplay/questions
+   - Upload ONLY on recap page ("end") OR when leaving the page (beforeunload)
 */
 
 const CONFIG = {
@@ -131,7 +135,7 @@ async function postPayload(payload) {
   local.push(payload);
   setStored("etl_localLog", local);
 
-  // Buffer for end-only upload
+  // Buffer for recap/exit-only upload
   const buf = getStored("etl_logBuffer", []);
   buf.push(payload);
   setStored("etl_logBuffer", buf);
@@ -175,6 +179,38 @@ async function flushLogs() {
     return { ok: false, error: String(e) };
   } finally {
     flushing = false;
+  }
+}
+
+/*
+  Best-effort flush when the user leaves the page.
+  Use sendBeacon because browsers often cancel fetch() during unload.
+*/
+function flushLogsOnExit() {
+  try {
+    if (!CONFIG.API_ENDPOINT) return;
+
+    const buf = getStored("etl_logBuffer", []);
+    if (!buf.length) return;
+
+    const payload = {
+      kind: "batch",
+      participantId: session.participantId,
+      sessionId: session.sessionId,
+      timestamp: nowISO(),
+      stage: session.stage,
+      mode: session.mode,
+      items: buf
+    };
+
+    const blob = new Blob([JSON.stringify(payload)], { type: "text/plain;charset=utf-8" });
+    const ok = navigator.sendBeacon && navigator.sendBeacon(CONFIG.API_ENDPOINT, blob);
+
+    // If we successfully queued the beacon, clear the buffer so we don't double-post next visit.
+    // If it fails, leave it so it can retry on recap next time.
+    if (ok) setStored("etl_logBuffer", []);
+  } catch {
+    // swallow: leaving-page code should never crash the game
   }
 }
 
@@ -1180,7 +1216,9 @@ function renderMathRace() {
 /* ---------------- End: replay each game without questions ---------------- */
 
 function renderEnd() {
+  // Upload when reaching recap page
   flushLogs();
+
   const best = getBest();
   els.screen.appendChild(card("You Escaped", "Your responses have been saved and submitted, but get a highscore. The leaderboard will be posted in #ride-responses"));
 
@@ -1236,6 +1274,11 @@ function shuffle(arr) {
 
 /* ---------------- Boot ---------------- */
 (function init() {
+  // Step 4: Upload on leaving the page (best-effort, no lag)
+  window.addEventListener("beforeunload", () => {
+    flushLogsOnExit();
+  });
+
   updateBadges();
   setStatus("Loaded.");
   if (!session.participantId) {
@@ -1245,4 +1288,3 @@ function shuffle(arr) {
   }
 
 })();
-
