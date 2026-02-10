@@ -126,23 +126,55 @@ function updateBadges() {
 }
 
 async function postPayload(payload) {
+  // Keep a local archive (optional but smart)
+  const local = getStored("etl_localLog", []);
+  local.push(payload);
+  setStored("etl_localLog", local);
+
+  // Buffer for end-only upload
+  const buf = getStored("etl_logBuffer", []);
+  buf.push(payload);
+  setStored("etl_logBuffer", buf);
+
+  // Never send during gameplay/questions
+  return { ok: true, buffered: true };
+}
+
+let flushing = false;
+
+async function flushLogs() {
+  if (!CONFIG.API_ENDPOINT) return { ok: true, skipped: true };
+  if (flushing) return { ok: true, alreadyFlushing: true };
+
+  const buf = getStored("etl_logBuffer", []);
+  if (!buf.length) return { ok: true, empty: true };
+
+  flushing = true;
   try {
-    // IMPORTANT: Using text/plain + no-cors avoids the Google Apps Script CORS preflight failure
     await fetch(CONFIG.API_ENDPOINT, {
       method: "POST",
       mode: "no-cors",
-      headers: {
-        "Content-Type": "text/plain;charset=utf-8"
-      },
-      body: JSON.stringify(payload)
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({
+        kind: "batch",
+        participantId: session.participantId,
+        sessionId: session.sessionId,
+        timestamp: nowISO(),
+        stage: session.stage,
+        mode: session.mode,
+        items: buf
+      })
     });
 
-    // We cannot read the response in no-cors mode,
-    // but the request WILL reach your Google Sheet.
-    return { ok: true, data: null };
-
-  } catch (err) {
-    return { ok: false, error: String(err) };
+    // Clear buffer after send
+    setStored("etl_logBuffer", []);
+    return { ok: true };
+  } catch (e) {
+    // Keep buffer so it can retry later
+    setStatus("Upload failed, saved locally (will retry on recap/exit).");
+    return { ok: false, error: String(e) };
+  } finally {
+    flushing = false;
   }
 }
 
@@ -1148,6 +1180,7 @@ function renderMathRace() {
 /* ---------------- End: replay each game without questions ---------------- */
 
 function renderEnd() {
+  flushLogs();
   const best = getBest();
   els.screen.appendChild(card("You Escaped", "Your responses have been saved and submitted, but get a highscore. The leaderboard will be posted in #ride-responses"));
 
@@ -1212,3 +1245,4 @@ function shuffle(arr) {
   }
 
 })();
+
