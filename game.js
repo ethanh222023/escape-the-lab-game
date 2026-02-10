@@ -190,8 +190,25 @@ function flushLogsOnExit() {
   try {
     if (!CONFIG.API_ENDPOINT) return;
 
+    // Pull current buffer
     const buf = getStored("etl_logBuffer", []);
-    if (!buf.length) return;
+
+    // Always add a final "exit" event so there's something new to send
+    const exitEvent = {
+      kind: "event",
+      participantId: session.participantId,
+      sessionId: session.sessionId,
+      timestamp: nowISO(),
+      stage: session.stage,
+      mode: session.mode,
+      eventType: "page_exit",
+      payload: {
+        href: location.href,
+        visibilityState: document.visibilityState
+      },
+      userAgent: navigator.userAgent
+    };
+    buf.push(exitEvent);
 
     const payload = {
       kind: "batch",
@@ -204,13 +221,14 @@ function flushLogsOnExit() {
     };
 
     const blob = new Blob([JSON.stringify(payload)], { type: "text/plain;charset=utf-8" });
+
     const ok = navigator.sendBeacon && navigator.sendBeacon(CONFIG.API_ENDPOINT, blob);
 
-    // If we successfully queued the beacon, clear the buffer so we don't double-post next visit.
-    // If it fails, leave it so it can retry on recap next time.
+    // If beacon queued successfully, clear buffer to avoid double-post next load
     if (ok) setStored("etl_logBuffer", []);
+    else setStored("etl_logBuffer", buf); // keep it for recap retry later
   } catch {
-    // swallow: leaving-page code should never crash the game
+    // do nothing, page is leaving anyway
   }
 }
 
@@ -1275,9 +1293,14 @@ function shuffle(arr) {
 /* ---------------- Boot ---------------- */
 (function init() {
   // Step 4: Upload on leaving the page (best-effort, no lag)
-  window.addEventListener("beforeunload", () => {
-    flushLogsOnExit();
-  });
+  window.addEventListener("pagehide", () => {
+  flushLogsOnExit();
+});
+
+// Keep beforeunload too as fallback
+window.addEventListener("beforeunload", () => {
+  flushLogsOnExit();
+});
 
   updateBadges();
   setStatus("Loaded.");
@@ -1288,3 +1311,4 @@ function shuffle(arr) {
   }
 
 })();
+
