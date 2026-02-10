@@ -407,8 +407,8 @@ function renderStart() {
   const box = document.createElement("div");
   box.className = "card";
   box.innerHTML = `
-  <div class="h1">Your Name</div>
-  <div class="p">Type your name so your scores and answers are labeled correctly.</div>
+  <div class="h1">Your Name (FIRST & LAST or NICKNAME)</div>
+  <div class="p">Type your full name or nickname so your scores and answers are labeled correctly.</div>
   <input id="pidInput" class="input" placeholder="Enter your name here" />
 `;
   els.screen.appendChild(box);
@@ -1311,4 +1311,5 @@ window.addEventListener("beforeunload", () => {
   }
 
 })();
+
 
