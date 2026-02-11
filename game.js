@@ -638,9 +638,9 @@ function renderSurvey1() {
   els.panelBody.textContent = "Survey block 1.";
   els.panelActions.appendChild(button("Open Terminal", async () => {
     await runTerminalSurvey("Q1", [
-      { id: "Q1_mood", type: "mc", prompt: "How locked in are you?", options: ["Not at all", "Somewhat", "Fully dialed"], required: true },
-      { id: "Q1_simon_strategy", type: "mc", prompt: "Simon strategy?", options: ["Pure memory", "Chunking", "Random hope"], required: true },
-      { id: "Q1_comment", type: "text", prompt: "One sentence about the experience so far:", placeholder: "It felt...", required: true },
+      { id: "Phone Number", type: "text", prompt: "Phone Number", required: true },
+      { id: "Drivers", type: "mc", prompt: "Can you drive?", options: ["Yes", "No", "Yes, but arriving late/missing a day"], required: true },
+      { id: "Num of Passengers", type: "mc", prompt: "If you can drive, how many OTHER people can you take", options: ["0", "1", "2","3","4","5","6","7"], required: false },
     ]);
     setStage("g2");
   }, "btn ok"));
@@ -652,9 +652,8 @@ function renderSurvey2() {
   els.panelBody.textContent = "Survey block 2.";
   els.panelActions.appendChild(button("Open Terminal", async () => {
     await runTerminalSurvey("Q2", [
-      { id: "Q2_pressure", type: "mc", prompt: "How stressful was the timer?", options: ["Not stressful", "Medium", "High"], required: true },
-      { id: "Q2_memory_feel", type: "mc", prompt: "Memory game felt:", options: ["Fair", "Tricky", "Rude"], required: true },
-      { id: "Q2_notes", type: "text", prompt: "What did you do to go faster?", placeholder: "I tried...", required: true },
+      { id: "Time", type: "mc", prompt: "What time can you leave on Friday?", options: ["2-4", "4-6", "6-8","8+","Whenever"], required: true },
+      { id: "Other Notes", type: "text", prompt: "Any other statements about rides? This includes whether you will be missing a day/arriving late or early, or driving yourself", placeholder: "Not required if N/A", required: true },
     ]);
     setStage("g3");
   }, "btn ok"));
@@ -666,9 +665,9 @@ function renderSurvey3() {
   els.panelBody.textContent = "Survey block 3.";
   els.panelActions.appendChild(button("Open Terminal", async () => {
     await runTerminalSurvey("Q3", [
-      { id: "Q3_focus", type: "mc", prompt: "How focused were you?", options: ["Low", "Medium", "High"], required: true },
-      { id: "Q3_verbal_difficulty", type: "mc", prompt: "Verbal memory difficulty:", options: ["Easy", "Medium", "Hard"], required: true },
-      { id: "Q3_feedback", type: "text", prompt: "One improvement suggestion:", placeholder: "I would change...", required: true },
+      { id: "Kid Toucher", type: "mc", prompt: "Would you rather inappropriately touch a kid, or everyone thinks that you touched a kid?", options: ["Touch the kid", "Everyone thinks you're a kid toucher"], required: true },
+      { id: "Snitch", type: "mc", prompt: "You and Ethan are arrested for allegedly sliming out the ops. If you snitch, you get no jail time, but Ethan gets the full sentence. If you don't, theres a 20% chance neither gets jail time, but a 80% chance both of you get the full sentence. Do you snitch?", options: ["I would never snitch on my boys", "Fuck that guy, I'm a rat"], required: true },
+      { id: "Haiku", type: "text", prompt: "Write a Haiku (3 lines-5,7,5 syllables)", placeholder: "Be creative. Make me laugh", required: true },
     ]);
     setStage("g4");
   }, "btn ok"));
@@ -680,7 +679,7 @@ function renderSurvey4() {
   els.panelBody.textContent = "Survey block 4.";
   els.panelActions.appendChild(button("Open Terminal", async () => {
     await runTerminalSurvey("Q4", [
-      { id: "Q4_math_fun", type: "mc", prompt: "Math race felt:", options: ["Fun", "Okay", "Pain"], required: true },
+      { id: "Suggestions", type: "text", prompt: "Do you have any ride form questions? Place any potential future questions here and I may pick them for the future.", required: true },
       { id: "Q4_overall", type: "mc", prompt: "Overall experience:", options: ["Good", "Neutral", "Bad"], required: true },
       { id: "Q4_final", type: "text", prompt: "Any final comment:", placeholder: "Final thoughts...", required: true },
     ]);
@@ -1311,5 +1310,6 @@ window.addEventListener("beforeunload", () => {
   }
 
 })();
+
 
 
