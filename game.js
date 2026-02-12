@@ -679,7 +679,7 @@ function renderSurvey4() {
   els.panelBody.textContent = "Survey block 4.";
   els.panelActions.appendChild(button("Open Terminal", async () => {
     await runTerminalSurvey("Q4", [
-      { id: "Suggestions", type: "text", prompt: "Do you have any ride form questions? Place any potential future questions here and I may pick them for the future.", required: true }
+      { id: "Suggestions", type: "text", prompt: "Do you have any ride form questions? Place any potential future questions here and I may pick them for the future.", required: false }
     ]);
     await logEvent("session_complete", { finishedAt: nowISO() });
     setStage("end");
@@ -1308,6 +1308,7 @@ window.addEventListener("beforeunload", () => {
   }
 
 })();
+
 
 
 
