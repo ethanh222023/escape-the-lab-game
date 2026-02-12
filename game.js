@@ -653,7 +653,7 @@ function renderSurvey2() {
   els.panelActions.appendChild(button("Open Terminal", async () => {
     await runTerminalSurvey("Q2", [
       { id: "Time", type: "mc", prompt: "What time can you leave on Friday?", options: ["2-4", "4-6", "6-8","8+","Whenever"], required: true },
-      { id: "Other Notes", type: "text", prompt: "Any other statements about rides? This includes whether you will be missing a day/arriving late or early, or driving yourself", placeholder: "Not required if N/A", required: true },
+      { id: "Other Notes", type: "text", prompt: "Any other statements about rides? This includes whether you will be missing a day/arriving late or early, or driving yourself", placeholder: "Not required if N/A", required: false },
     ]);
     setStage("g3");
   }, "btn ok"));
@@ -679,9 +679,7 @@ function renderSurvey4() {
   els.panelBody.textContent = "Survey block 4.";
   els.panelActions.appendChild(button("Open Terminal", async () => {
     await runTerminalSurvey("Q4", [
-      { id: "Suggestions", type: "text", prompt: "Do you have any ride form questions? Place any potential future questions here and I may pick them for the future.", required: true },
-      { id: "Q4_overall", type: "mc", prompt: "Overall experience:", options: ["Good", "Neutral", "Bad"], required: true },
-      { id: "Q4_final", type: "text", prompt: "Any final comment:", placeholder: "Final thoughts...", required: true },
+      { id: "Suggestions", type: "text", prompt: "Do you have any ride form questions? Place any potential future questions here and I may pick them for the future.", required: true }
     ]);
     await logEvent("session_complete", { finishedAt: nowISO() });
     setStage("end");
@@ -1310,6 +1308,7 @@ window.addEventListener("beforeunload", () => {
   }
 
 })();
+
 
 
 
