@@ -325,6 +325,7 @@ async function runTerminalSurvey(blockId, questions) {
       qWrap.appendChild(optWrap);
     } else if (q.type === "text") {
       const ta = document.createElement("textarea");
+      answers[q.id] = ""
       ta.placeholder = q.placeholder || "Type here…";
       ta.addEventListener("input", () => { answers[q.id] = ta.value; });
       ta.style.marginTop = "10px";
@@ -344,7 +345,7 @@ async function runTerminalSurvey(blockId, questions) {
   await modal({ title: "Terminal Interaction", bodyNode: container, okText: "Submit" });
 
   for (const q of questions) {
-    if (q.required) {
+    if (q.required === true) {
       const v = answers[q.id];
       if (q.type === "mc" && !v) {
         await modal({ title: "Terminal Error", bodyHTML: `<div class="fail">Missing: <span class="kbd">${q.id}</span></div>`, okText: "Try again" });
@@ -1308,6 +1309,7 @@ window.addEventListener("beforeunload", () => {
   }
 
 })();
+
 
 
 
