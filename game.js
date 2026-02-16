@@ -1,21 +1,12 @@
 /* Escape the Lab (Upgraded): 4 High-score mini-games + survey blocks
-   Tweaks included:
-   1) Simon brighter lit state (CSS)
-   2) Simon best updates correctly
-   3) Memory match: more pairs + ultimate frisbee words
-   4) Memory match best updates correctly
-   5) Verbal memory: no back-to-back same word
-   6) Verbal memory best updates correctly
-   7) Math race: 3-second pre-countdown
-   8) Math race: include * and / (integer division only)
-   9) Math race: 5 seconds per question
-   10) Math race best updates correctly
-   11) Questions modal scroll (CSS)
-   12) Final recap: buttons for each game to replay without questions
-
    Upload policy:
    - Buffer everything locally during gameplay/questions
-   - Upload ONLY on recap page ("end") OR when leaving the page (beforeunload)
+   - Upload ONLY on recap page ("end") OR when leaving the page (pagehide/beforeunload)
+
+   New addition:
+   - Recap screen includes "Review / Edit Answers" button
+   - Shows all questions, prefilled with the user's latest answers
+   - Any edits are saved locally + logged and flushed (same as recap entry)
 */
 
 const CONFIG = {
@@ -247,9 +238,27 @@ function basePayload(kind) {
 async function logEvent(eventType, payload = {}) {
   await postPayload({ ...basePayload("event"), eventType, payload });
 }
+
+/*
+  Store latest answers locally so recap can edit them.
+  This is the "source of truth" for the edit screen UI.
+*/
+function getLatestAnswers() {
+  return getStored("etl_answers", {});
+}
+function setLatestAnswers(map) {
+  setStored("etl_answers", map);
+}
+
 async function logResponse(questionId, response) {
+  // update local "latest answers"
+  const latest = getLatestAnswers();
+  latest[questionId] = (response === undefined) ? null : response;
+  setLatestAnswers(latest);
+
   await postPayload({ ...basePayload("response"), questionId, response });
 }
+
 async function logScore(gameId, runStats, bestStats) {
   await postPayload({ ...basePayload("score"), gameId, runStats, bestStats });
 }
@@ -269,6 +278,190 @@ function setBest(best) { setStored("etl_best", best); }
 function betterTime(newMs, oldMs) {
   if (oldMs == null) return true;
   return newMs < oldMs;
+}
+
+/* ---------------- Questions catalog (for recap editing) ---------------- */
+
+function getAllQuestionsCatalog() {
+  // Keep this in sync with your 4 survey blocks.
+  // We use this for editing on recap screen.
+  return [
+    // Q1
+    { blockId: "Q1", id: "Phone Number", type: "text", prompt: "Phone Number", required: true },
+    { blockId: "Q1", id: "Drivers", type: "mc", prompt: "Can you drive?", options: ["Yes", "No", "Yes, but arriving late/missing a day"], required: true },
+    { blockId: "Q1", id: "Num of Passengers", type: "mc", prompt: "If you can drive, how many OTHER people can you take", options: ["0", "1", "2","3","4","5","6","7"], required: false },
+
+    // Q2
+    { blockId: "Q2", id: "Time", type: "mc", prompt: "What time can you leave on Friday?", options: ["2-4", "4-6", "6-8","8+","Whenever"], required: true },
+    { blockId: "Q2", id: "Other Notes", type: "text", prompt: "Any other statements about rides? This includes whether you will be missing a day/arriving late or early, or driving yourself", placeholder: "Not required if N/A", required: false },
+
+    // Q3
+    { blockId: "Q3", id: "Kid Toucher", type: "mc", prompt: "Would you rather inappropriately touch a kid, or everyone thinks that you touched a kid?", options: ["Touch the kid", "Everyone thinks you're a kid toucher"], required: true },
+    { blockId: "Q3", id: "Snitch", type: "mc", prompt: "You and Ethan are arrested for allegedly sliming out the ops. If you snitch, you get no jail time, but Ethan gets the full sentence. If you don't, theres a 20% chance neither gets jail time, but a 80% chance both of you get the full sentence. Do you snitch?", options: ["I would never snitch on my boys", "Fuck that guy, I'm a rat"], required: true },
+    { blockId: "Q3", id: "Haiku", type: "text", prompt: "Write a Haiku (3 lines-5,7,5 syllables)", placeholder: "Be creative. Make me laugh", required: true },
+
+    // Q4
+    { blockId: "Q4", id: "AirBandB", type: "mc", prompt: "Were you confirmed to be staying at the AirB&B? (Only say yes if you were told you were)", options: ["Yes, I am staying at the AirB&B", "No, I am staying at the Hotel"], required: true },
+    { blockId: "Q4", id: "Suggestions", type: "text", prompt: "Do you have any ride form questions? Place any potential future questions here and I may pick them for the future.", required: false },
+  ];
+}
+
+async function openEditAnswersModal() {
+  const catalog = getAllQuestionsCatalog();
+  const latest = getLatestAnswers();
+
+  // Build editable form UI
+  const container = document.createElement("div");
+  container.className = "terminal";
+  container.innerHTML = `
+    <div><span class="kbd">TERMINAL</span> Review / Edit Answers</div>
+    <div class="puzzle-hint">Edit anything. Hit Save to sync to the spreadsheet.</div>
+  `;
+
+  const form = document.createElement("div");
+  form.className = "grid";
+  form.style.marginTop = "12px";
+
+  // local working copy
+  const edits = { ...latest };
+
+  // Group by blockId for readability
+  const blocks = ["Q1", "Q2", "Q3", "Q4"];
+  for (const blockId of blocks) {
+    const header = document.createElement("div");
+    header.className = "card";
+    header.innerHTML = `<div class="h1">${blockId} Answers</div><div class="p">Edit below.</div>`;
+    form.appendChild(header);
+
+    const qs = catalog.filter(q => q.blockId === blockId);
+    for (const q of qs) {
+      const qWrap = document.createElement("div");
+      qWrap.className = "card";
+
+      const title = document.createElement("div");
+      title.style.fontWeight = "700";
+      title.textContent = q.prompt;
+      qWrap.appendChild(title);
+
+      const currentVal = (latest[q.id] ?? "");
+
+      if (q.type === "mc") {
+        const optWrap = document.createElement("div");
+        optWrap.className = "grid two";
+        optWrap.style.marginTop = "10px";
+
+        q.options.forEach((opt) => {
+          const label = document.createElement("label");
+          label.style.display = "flex";
+          label.style.gap = "8px";
+          label.style.alignItems = "center";
+          label.style.cursor = "pointer";
+
+          const radio = document.createElement("input");
+          radio.type = "radio";
+          radio.name = `edit_${q.id}`;
+          radio.value = opt;
+          radio.checked = String(currentVal) === String(opt);
+          radio.addEventListener("change", () => { edits[q.id] = opt; });
+
+          const span = document.createElement("span");
+          span.textContent = opt;
+
+          label.appendChild(radio);
+          label.appendChild(span);
+          optWrap.appendChild(label);
+        });
+
+        // allow clearing optional MC
+        if (q.required !== true) {
+          const clearBtn = document.createElement("button");
+          clearBtn.className = "btn secondary";
+          clearBtn.type = "button";
+          clearBtn.textContent = "Clear";
+          clearBtn.style.marginTop = "10px";
+          clearBtn.addEventListener("click", () => {
+            edits[q.id] = "";
+            // uncheck radios
+            optWrap.querySelectorAll("input[type=radio]").forEach(r => (r.checked = false));
+          });
+          qWrap.appendChild(optWrap);
+          qWrap.appendChild(clearBtn);
+        } else {
+          qWrap.appendChild(optWrap);
+        }
+      } else if (q.type === "text") {
+        const ta = document.createElement("textarea");
+        ta.placeholder = q.placeholder || "Type here…";
+        ta.value = String(currentVal ?? "");
+        edits[q.id] = ta.value;
+        ta.addEventListener("input", () => { edits[q.id] = ta.value; });
+        ta.style.marginTop = "10px";
+        qWrap.appendChild(ta);
+      }
+
+      const req = document.createElement("div");
+      req.className = "puzzle-hint";
+      req.textContent = (q.required === true) ? "Required" : "Optional";
+      qWrap.appendChild(req);
+
+      form.appendChild(qWrap);
+    }
+  }
+
+  container.appendChild(form);
+
+  const res = await modal({
+    title: "Edit Answers",
+    bodyNode: container,
+    okText: "Save",
+    cancelText: "Cancel"
+  });
+
+  if (!res.ok) return;
+
+  // Validate required questions (only on save)
+  for (const q of catalog) {
+    if (q.required === true) {
+      const v = edits[q.id];
+      if (q.type === "mc" && (!v || String(v).trim() === "")) {
+        await modal({
+          title: "Missing Required",
+          bodyHTML: `<div class="fail">You must answer: <span class="kbd">${q.id}</span></div>`,
+          okText: "OK"
+        });
+        return;
+      }
+      if (q.type === "text" && (!v || !String(v).trim())) {
+        await modal({
+          title: "Missing Required",
+          bodyHTML: `<div class="fail">You must answer: <span class="kbd">${q.id}</span></div>`,
+          okText: "OK"
+        });
+        return;
+      }
+    }
+  }
+
+  // Log only changed answers (cleaner)
+  const changes = [];
+  for (const q of catalog) {
+    const prev = (latest[q.id] ?? "");
+    const next = (edits[q.id] ?? "");
+    if (String(prev) !== String(next)) {
+      changes.push({ id: q.id, from: prev, to: next });
+      await logResponse(q.id, next);
+    }
+  }
+
+  await logEvent("responses_edited", { count: changes.length, changes });
+  setStatus(changes.length ? "Edits saved. Syncing..." : "No changes to save.");
+
+  // Send immediately like recap entry does
+  await flushLogs();
+
+  // Update UI (so if they reopen editor it’s fresh)
+  // (re-render recap)
+  render();
 }
 
 /* ---------------- Survey blocks ---------------- */
@@ -325,7 +518,7 @@ async function runTerminalSurvey(blockId, questions) {
       qWrap.appendChild(optWrap);
     } else if (q.type === "text") {
       const ta = document.createElement("textarea");
-      answers[q.id] = ""
+      answers[q.id] = "";
       ta.placeholder = q.placeholder || "Type here…";
       ta.addEventListener("input", () => { answers[q.id] = ta.value; });
       ta.style.marginTop = "10px";
@@ -424,6 +617,11 @@ function renderStart() {
     }
     session.participantId = pid || `anon_${session.sessionId.slice(0,6)}`;
     setStored("etl_participantId", session.participantId);
+
+    // clear any prior stored answers if they start a totally new session on same device
+    // (comment out if you want old answers to persist across runs)
+    // setStored("etl_answers", {});
+
     setMode("normal");
     await logEvent("session_start", { startedAt: session.startedAt });
     setStage("start");
@@ -462,15 +660,15 @@ function renderHub() {
 
 function renderSimon() {
   async function preCountdown() {
-  setSimonStatus("Get ready...");
-  Object.values(btnEls).forEach(b => b.disabled = true);
+    setSimonStatus("Get ready...");
+    Object.values(btnEls).forEach(b => b.disabled = true);
 
-  for (let i = 3; i >= 1; i--) {
-    setSimonStatus(`Starting in ${i}...`);
-    await sleep(900);
-  }
-  setSimonStatus("GO!");
-  await sleep(250);
+    for (let i = 3; i >= 1; i--) {
+      setSimonStatus(`Starting in ${i}...`);
+      await sleep(900);
+    }
+    setSimonStatus("GO!");
+    await sleep(250);
   }
   const best = getBest();
 
@@ -619,12 +817,12 @@ function renderSimon() {
 
   els.panelTitle.textContent = "Simon";
   els.panelBody.textContent = "Press Start, repeat the sequence.";
-els.panelActions.appendChild(button("Start", async () => {
-  seq = []; userIdx = 0; level = 0;
-  setSimonLevel(0);
-  await preCountdown();
-  await nextRound();
-}, "btn ok"));
+  els.panelActions.appendChild(button("Start", async () => {
+    seq = []; userIdx = 0; level = 0;
+    setSimonLevel(0);
+    await preCountdown();
+    await nextRound();
+  }, "btn ok"));
 
   els.panelActions.appendChild(button(session.mode === "freeplay" ? "Back to recap" : "Continue", async () => {
     await (session.mode === "freeplay" ? setStage("end") : setStage("q1"));
@@ -703,7 +901,7 @@ function renderMemoryTimed() {
   `;
   els.screen.appendChild(hud);
 
-  const TOTAL_PAIRS = 8; // more matches
+  const TOTAL_PAIRS = 8;
 
   let state = initMemoryState(TOTAL_PAIRS);
   let first = null;
@@ -854,7 +1052,6 @@ function renderMemoryTimed() {
 }
 
 function initMemoryState(pairs) {
-  // Ultimate frisbee-related pairs (expand as needed)
   const base = [
     "disc","handler","cutter","huck","layout","mark",
     "stack","zone","pull","flick","backhand","forehand",
@@ -862,9 +1059,8 @@ function initMemoryState(pairs) {
     "reset","poach","clapcatch","endzone","upline","pivot"
   ];
 
-  // pick N unique words
   const pool = shuffle([...base]).slice(0, pairs);
-  const values = shuffle(pool.flatMap(w => [w, w])); // make pairs and shuffle
+  const values = shuffle(pool.flatMap(w => [w, w]));
 
   return { cards: values.map(v => ({ value: v, revealed: false, matched: false })) };
 }
@@ -908,21 +1104,18 @@ function renderVerbalMemory() {
   }
 
   function nextWord() {
-    // 65% chance new word if available, else repeat, but never back-to-back same
     let chooseRepeat = Math.random() < 0.35 && seen.size > 0;
     if (pool.length === 0) chooseRepeat = true;
 
     if (chooseRepeat) {
       let arr = Array.from(seen).filter(w => w !== lastWord);
       if (arr.length === 0) {
-        // only possible repeat is lastWord; if we still have new words, force new
         if (pool.length > 0) chooseRepeat = false;
-        else arr = Array.from(seen); // unavoidable
+        else arr = Array.from(seen);
       }
       if (chooseRepeat) current = arr[Math.floor(Math.random() * arr.length)];
     }
     if (!chooseRepeat) {
-      // ensure new isn't equal to lastWord (rare but handle)
       let tries = 0;
       do {
         current = pool.pop();
@@ -945,7 +1138,6 @@ function renderVerbalMemory() {
 
     await logEvent("verbal_pick", { word: current, choice, isSeen, correct });
 
-    // After any display, it is now "seen"
     seen.add(current);
 
     if (correct) {
@@ -1028,7 +1220,7 @@ function buildWordPool() {
   return shuffle([...words]);
 }
 
-/* ---------------- Game 4: Math Race (countdown, 5s, + - * /) ---------------- */
+/* ---------------- Game 4: Math Race ---------------- */
 
 function renderMathRace() {
   const best = getBest();
@@ -1077,7 +1269,6 @@ function renderMathRace() {
   }
 
   function makeProblem() {
-    // include / by constructing divisible problems
     const opsByDiff = (d) => {
       if (d <= 2) return ["+","-","*"];
       return ["+","-","*","/"];
@@ -1088,7 +1279,6 @@ function renderMathRace() {
     let a, b, answer, text;
 
     if (op === "/") {
-      // Build: (a*b) / b so it's integer
       b = randInt(2, difficulty <= 3 ? 9 : 12);
       a = randInt(2, difficulty <= 3 ? 12 : 20);
       const prod = a * b;
@@ -1130,7 +1320,7 @@ function renderMathRace() {
     ansEl().value = "";
     ansEl().focus();
 
-    const PER_Q_MS = 5000; // 5 seconds
+    const PER_Q_MS = 5000;
     deadline = performance.now() + PER_Q_MS;
 
     if (timer) clearInterval(timer);
@@ -1248,9 +1438,9 @@ function renderEnd() {
     <div class="p"><span class="kbd">Verbal</span> best score: ${best.verbal.bestScore}</div>
     <div class="p"><span class="kbd">Math</span> best score: ${best.math.bestScore}</div>
     <div class="puzzle-hint">
-  Your responses have been sent. Every time you set a new high score, it’s saved and updated too.
-  Replay the games on the right panel to improve your scores.
-</div>
+      Your responses have been sent. Every time you set a new high score, it’s saved and updated too.
+      Replay the games on the right panel to improve your scores.
+    </div>
   `;
   els.screen.appendChild(c);
 
@@ -1262,6 +1452,11 @@ function renderEnd() {
     setStage(stage);
   };
 
+  // NEW: Edit answers button
+  els.panelActions.appendChild(button("Review / Edit Answers", async () => {
+    await openEditAnswersModal();
+  }, "btn secondary"));
+
   els.panelActions.appendChild(button("Play Simon", () => go("g1"), "btn ok"));
   els.panelActions.appendChild(button("Play Memory Match", () => go("g2"), "btn ok"));
   els.panelActions.appendChild(button("Play Verbal Memory", () => go("g3"), "btn ok"));
@@ -1270,7 +1465,8 @@ function renderEnd() {
   els.panelActions.appendChild(button("Submit Another Response", async () => {
     [
       "etl_participantId","etl_sessionId","etl_startedAt","etl_stage",
-      "etl_best","etl_localLog","etl_mode"
+      "etl_best","etl_localLog","etl_mode",
+      "etl_answers","etl_logBuffer"
     ].forEach(k => localStorage.removeItem(k));
     location.reload();
   }, "btn danger"));
@@ -1291,15 +1487,15 @@ function shuffle(arr) {
 
 /* ---------------- Boot ---------------- */
 (function init() {
-  // Step 4: Upload on leaving the page (best-effort, no lag)
+  // Upload on leaving the page (best-effort, no lag)
   window.addEventListener("pagehide", () => {
-  flushLogsOnExit();
-});
+    flushLogsOnExit();
+  });
 
-// Keep beforeunload too as fallback
-window.addEventListener("beforeunload", () => {
-  flushLogsOnExit();
-});
+  // Keep beforeunload too as fallback
+  window.addEventListener("beforeunload", () => {
+    flushLogsOnExit();
+  });
 
   updateBadges();
   setStatus("Loaded.");
@@ -1310,10 +1506,3 @@ window.addEventListener("beforeunload", () => {
   }
 
 })();
-
-
-
-
-
-
-
