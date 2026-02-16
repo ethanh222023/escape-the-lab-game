@@ -597,7 +597,7 @@ function render() {
 }
 
 function renderStart() {
-  els.screen.appendChild(card("Escape the Lab", "With some fun ;)."));
+  els.screen.appendChild(card("EQ Rides form", "With some fun ;)."));
   const box = document.createElement("div");
   box.className = "card";
   box.innerHTML = `
@@ -1506,3 +1506,4 @@ function shuffle(arr) {
   }
 
 })();
+
