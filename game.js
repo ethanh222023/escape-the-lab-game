@@ -67,16 +67,31 @@ function injectMobilePatchCSS() {
       grid-template-columns: repeat(4, minmax(0, 1fr));
     }
     .mem-card {
-      width: 100%;
-      aspect-ratio: 1 / 1;
-      box-sizing: border-box;
-      overflow: hidden;
-      white-space: nowrap;
-      text-overflow: ellipsis;
-      transform: none !important;
-      -webkit-tap-highlight-color: transparent;
-      touch-action: manipulation;
-    }
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  box-sizing: border-box;
+  overflow: hidden;
+
+  /* SHOW THE WHOLE WORD (wrap instead of ... ) */
+  white-space: normal;
+  text-overflow: clip;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+
+  /* Make it look nice */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 6px;
+  line-height: 1.1;
+  font-weight: 700;
+  font-size: clamp(10px, 2.6vw, 16px);
+
+  transform: none !important;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
     .mem-card.revealed, .mem-card:active, .mem-card:focus {
       transform: none !important;
     }
@@ -816,9 +831,19 @@ function renderMemoryTimed() {
       b.style.aspectRatio = "1 / 1";
       b.style.boxSizing = "border-box";
       b.style.overflow = "hidden";
-      b.style.whiteSpace = "nowrap";
-      b.style.textOverflow = "ellipsis";
-      b.style.transform = "none";
+b.style.whiteSpace = "normal";
+b.style.textOverflow = "clip";
+b.style.wordBreak = "break-word";
+b.style.overflowWrap = "anywhere";
+b.style.textAlign = "center";
+b.style.padding = "6px";
+b.style.lineHeight = "1.1";
+b.style.fontWeight = "700";
+b.style.fontSize = "clamp(10px, 2.6vw, 16px)";
+b.style.display = "flex";
+b.style.alignItems = "center";
+b.style.justifyContent = "center";
+b.style.transform = "none";
 
       if (c.matched) b.classList.add("matched");
       if (c.revealed) b.classList.add("revealed");
@@ -1410,3 +1435,4 @@ function shuffle(arr) {
   }
 
 })();
+
