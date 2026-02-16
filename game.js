@@ -981,7 +981,7 @@ function initMemoryState(pairs) {
 
 function renderVerbalMemory() {
   const best = getBest();
-  els.screen.appendChild(card("Game 3: Verbal Memory", "Seen or New. 3 lives. No back-to-back repeats."));
+  els.screen.appendChild(card("Game 3: Verbal Memory", "Select New if you have not seen the word yet. Select Seen if it has already showed up. You have 3 lives."));
 
   const hud = document.createElement("div");
   hud.className = "game-hud";
@@ -1435,4 +1435,5 @@ function shuffle(arr) {
   }
 
 })();
+
 
