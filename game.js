@@ -1140,7 +1140,7 @@ function buildWordPool() {
 
 function renderMathRace() {
   const best = getBest();
-  els.screen.appendChild(card("Game 4: Math Race", "5 seconds per question."));
+  els.screen.appendChild(card("Game 4: Math Race", "5 seconds per question. You have 3 lives"));
 
   const hud = document.createElement("div");
   hud.className = "game-hud";
@@ -1435,5 +1435,6 @@ function shuffle(arr) {
   }
 
 })();
+
 
 
