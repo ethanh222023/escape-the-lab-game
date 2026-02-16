@@ -7,6 +7,13 @@
    - Recap screen includes "Review / Edit Answers" button
    - Shows all questions, prefilled with the user's latest answers
    - Any edits are saved locally + logged and flushed (same as recap entry)
+
+   Mobile compatibility fixes (NEW):
+   - Prevent iOS/Android auto-zoom on input focus (force >=16px font)
+   - Prevent “screen jump” from button focus on memory tiles / simon buttons
+   - Make modal + main area scroll nicely with keyboard (VisualViewport)
+   - Add touch-action: manipulation + remove tap highlight for better tapping
+   - Ensure a sane viewport meta tag exists (if your HTML forgot it)
 */
 
 const CONFIG = {
@@ -34,6 +41,130 @@ function setStatus(msg) { els.status.textContent = `Status: ${msg}`; }
 function nowISO() { return new Date().toISOString(); }
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+/* ---------------- Mobile compatibility helpers ---------------- */
+
+function ensureViewportMeta() {
+  // If index.html already has one, we leave it alone.
+  // If not, we add a sane default so mobile sizing is not cursed.
+  let meta = document.querySelector('meta[name="viewport"]');
+  if (!meta) {
+    meta = document.createElement("meta");
+    meta.name = "viewport";
+    document.head.appendChild(meta);
+  }
+  // Don’t block user zoom. Accessibility > aesthetics.
+  // But do set typical values so layout is stable.
+  meta.setAttribute("content", "width=device-width, initial-scale=1, viewport-fit=cover");
+}
+
+let _mobileStyleInjected = false;
+function injectMobileStylePatch() {
+  if (_mobileStyleInjected) return;
+  _mobileStyleInjected = true;
+
+  const style = document.createElement("style");
+  style.id = "etl-mobile-patch";
+  style.textContent = `
+    /* Prevent iOS zoom-on-focus by ensuring inputs are >=16px */
+    input, textarea, select, button {
+      font-size: 16px !important;
+      line-height: 1.2 !important;
+      -webkit-text-size-adjust: 100%;
+    }
+
+    /* Better tapping, less accidental double-tap zoom */
+    .simon-btn, .mem-card, .btn, button {
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* When keyboard appears, keep content scrollable inside panels/modals */
+    #screen {
+      overflow: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    /* Modal body should scroll rather than pushing layout around */
+    #modalBody {
+      overflow: auto;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+    }
+
+    /* Avoid weird rubber-banding scroll behavior on iOS */
+    html, body {
+      overscroll-behavior: contain;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function setViewportVars() {
+  const h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  const w = window.visualViewport ? window.visualViewport.width : window.innerWidth;
+  document.documentElement.style.setProperty("--vvh", `${h}px`);
+  document.documentElement.style.setProperty("--vvw", `${w}px`);
+
+  // Keep the main play area stable and scrollable if needed.
+  if (els.screen) {
+    // Don’t hard-lock height to avoid fighting your CSS, just ensure it can fit.
+    els.screen.style.minHeight = `${Math.max(320, h - 10)}px`;
+  }
+}
+
+function setupVisualViewportHandlers() {
+  setViewportVars();
+  if (!window.visualViewport) return;
+
+  const vv = window.visualViewport;
+  vv.addEventListener("resize", setViewportVars);
+  vv.addEventListener("scroll", setViewportVars);
+}
+
+function safeFocus(el) {
+  if (!el) return;
+  try {
+    // preventScroll works on modern browsers
+    el.focus({ preventScroll: true });
+  } catch {
+    try { el.focus(); } catch {}
+  }
+}
+
+function applyMobileInputFixes(root) {
+  if (!root) return;
+
+  // Inputs/textarea: prevent zoom-on-focus + help mobile keyboards
+  root.querySelectorAll("input, textarea").forEach((el) => {
+    el.style.fontSize = "16px";
+    el.style.lineHeight = "1.2";
+    el.style.maxWidth = "100%";
+
+    if (el.tagName.toLowerCase() === "input") {
+      el.setAttribute("autocomplete", "off");
+      el.setAttribute("autocapitalize", "none");
+      el.setAttribute("spellcheck", "false");
+    } else {
+      el.setAttribute("autocapitalize", "none");
+      el.setAttribute("spellcheck", "false");
+    }
+  });
+}
+
+function preventFocusScrollJump(btn) {
+  // Mobile Safari loves scrolling focused buttons into view.
+  // Block the focus change that triggers the jump, while keeping click working.
+  if (!btn) return;
+  btn.setAttribute("tabindex", "-1");
+  btn.addEventListener("mousedown", (e) => e.preventDefault());
+  btn.addEventListener("touchstart", () => {
+    // Don’t focus on touch.
+    try { btn.blur(); } catch {}
+  }, { passive: true });
+}
+
+/* ---------------- Core utils ---------------- */
+
 function uuidLike() {
   return "xxxxxx-xxxx-4xxx-yxxx-xxxxxxxx".replace(/[xy]/g, c => {
     const r = (Math.random() * 16) | 0;
@@ -53,7 +184,10 @@ function button(label, onClick, cls = "btn primary") {
   const b = document.createElement("button");
   b.className = cls;
   b.textContent = label;
+  b.type = "button";
   b.addEventListener("click", onClick);
+  // mobile: reduce focus-induced jumping
+  preventFocusScrollJump(b);
   return b;
 }
 function card(title, text) {
@@ -76,6 +210,13 @@ function modal({ title, bodyNode = null, bodyHTML = null, okText = "OK", cancelT
     els.modalBody.innerHTML = "";
     if (bodyNode) els.modalBody.appendChild(bodyNode);
     else if (bodyHTML != null) els.modalBody.innerHTML = bodyHTML;
+
+    // Make modal scroll nicely with keyboard on phones
+    const h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+    els.modalBody.style.maxHeight = `${Math.max(220, h - 220)}px`;
+    els.modalBody.style.overflow = "auto";
+
+    applyMobileInputFixes(els.modalBody);
 
     els.modalOk.textContent = okText;
 
@@ -410,6 +551,9 @@ async function openEditAnswersModal() {
 
   container.appendChild(form);
 
+  // Mobile fixes inside modal content
+  applyMobileInputFixes(container);
+
   const res = await modal({
     title: "Edit Answers",
     bodyNode: container,
@@ -535,6 +679,9 @@ async function runTerminalSurvey(blockId, questions) {
 
   container.appendChild(form);
 
+  // Mobile fixes inside terminal modal
+  applyMobileInputFixes(container);
+
   await modal({ title: "Terminal Interaction", bodyNode: container, okText: "Submit" });
 
   for (const q of questions) {
@@ -579,6 +726,9 @@ function render() {
   clearNode(els.panelActions);
   updateBadges();
 
+  // Re-apply viewport vars in case keyboard/orientation changed between renders
+  setViewportVars();
+
   if (!session.participantId) return renderStart();
 
   switch (session.stage) {
@@ -607,6 +757,15 @@ function renderStart() {
 `;
   els.screen.appendChild(box);
 
+  // Mobile: prevent zoom + keyboard helpfulness
+  const pidInput = box.querySelector("#pidInput");
+  if (pidInput) {
+    pidInput.style.fontSize = "16px";
+    pidInput.setAttribute("autocapitalize", "words");
+    pidInput.setAttribute("autocomplete", "name");
+    pidInput.setAttribute("enterkeyhint", "done");
+  }
+
   els.panelTitle.textContent = "Start";
   els.panelBody.textContent = "Enter name, then begin.";
   els.panelActions.appendChild(button("Start", async () => {
@@ -617,10 +776,6 @@ function renderStart() {
     }
     session.participantId = pid || `anon_${session.sessionId.slice(0,6)}`;
     setStored("etl_participantId", session.participantId);
-
-    // clear any prior stored answers if they start a totally new session on same device
-    // (comment out if you want old answers to persist across runs)
-    // setStored("etl_answers", {});
 
     setMode("normal");
     await logEvent("session_start", { startedAt: session.startedAt });
@@ -697,7 +852,9 @@ function renderSimon() {
   colors.forEach(c => {
     const b = document.createElement("button");
     b.className = c.cls;
+    b.type = "button";
     b.disabled = true;
+    preventFocusScrollJump(b); // mobile: stop viewport jumping
     b.addEventListener("click", () => simonHandleClick(c.id));
     btnEls[c.id] = b;
     grid.appendChild(b);
@@ -886,7 +1043,7 @@ function renderSurvey4() {
   }, "btn ok"));
 }
 
-/* ---------------- Game 2: Timed Memory Match (more pairs, frisbee words) ---------------- */
+/* ---------------- Game 2: Timed Memory Match ---------------- */
 
 function renderMemoryTimed() {
   const best = getBest();
@@ -935,6 +1092,8 @@ function renderMemoryTimed() {
     state.cards.forEach((c, idx) => {
       const b = document.createElement("button");
       b.className = "mem-card";
+      b.type = "button";
+      preventFocusScrollJump(b); // mobile: stop viewport resizing/jumping on tap
       if (c.matched) b.classList.add("matched");
       if (c.revealed) b.classList.add("revealed");
       b.textContent = (c.revealed || c.matched) ? c.value : "???";
@@ -1252,6 +1411,17 @@ function renderMathRace() {
 
   const ansEl = () => document.getElementById("mrAns");
 
+  // Mobile keyboard hints + prevent zoom
+  const ans = ansEl();
+  if (ans) {
+    ans.style.fontSize = "16px";
+    ans.setAttribute("inputmode", "numeric");
+    ans.setAttribute("autocomplete", "off");
+    ans.setAttribute("autocapitalize", "none");
+    ans.setAttribute("spellcheck", "false");
+    ans.setAttribute("enterkeyhint", "done");
+  }
+
   let score = 0;
   let lives = 3;
   let difficulty = 1;
@@ -1309,7 +1479,7 @@ function renderMathRace() {
     eq.textContent = "GO!";
     await sleep(250);
     ansEl().disabled = false;
-    ansEl().focus();
+    safeFocus(ansEl());
     started = true;
     showProblem();
   }
@@ -1318,7 +1488,7 @@ function renderMathRace() {
     current = makeProblem();
     eq.textContent = current.text;
     ansEl().value = "";
-    ansEl().focus();
+    safeFocus(ansEl());
 
     const PER_Q_MS = 5000;
     deadline = performance.now() + PER_Q_MS;
@@ -1452,7 +1622,7 @@ function renderEnd() {
     setStage(stage);
   };
 
-  // NEW: Edit answers button
+  // Edit answers button
   els.panelActions.appendChild(button("Review / Edit Answers", async () => {
     await openEditAnswersModal();
   }, "btn secondary"));
@@ -1487,6 +1657,12 @@ function shuffle(arr) {
 
 /* ---------------- Boot ---------------- */
 (function init() {
+  // Mobile compatibility first
+  ensureViewportMeta();
+  injectMobileStylePatch();
+  setupVisualViewportHandlers();
+  setViewportVars();
+
   // Upload on leaving the page (best-effort, no lag)
   window.addEventListener("pagehide", () => {
     flushLogsOnExit();
@@ -1506,4 +1682,3 @@ function shuffle(arr) {
   }
 
 })();
-
