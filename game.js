@@ -3,7 +3,7 @@
    - Buffer everything locally during gameplay/questions
    - Upload ONLY on recap page ("end") OR when leaving the page (pagehide/beforeunload)
 
-   New addition:
+   Recap edit feature (RESTORED):
    - Recap screen includes "Review / Edit Answers" button
    - Shows all questions, prefilled with the user's latest answers
    - Any edits are saved locally + logged and flushed (same as recap entry)
@@ -34,14 +34,7 @@ function setStatus(msg) { els.status.textContent = `Status: ${msg}`; }
 function nowISO() { return new Date().toISOString(); }
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-/* ---------------- Mobile compatibility patches ----------------
-   Mobile browsers love to:
-   - zoom the page when an input is focused (if font-size < 16px)
-   - scroll/jump when buttons get focus (especially inside grids)
-   - resize viewport when the keyboard opens
-
-   We can't control all CSS from here, so we inject a small override stylesheet.
-*/
+/* ---------------- Mobile compatibility patches ---------------- */
 let _mobilePatchInjected = false;
 
 function isMobileish() {
@@ -66,32 +59,34 @@ function injectMobilePatchCSS() {
     .memory-grid { 
       grid-template-columns: repeat(4, minmax(0, 1fr));
     }
+
     .mem-card {
-  width: 100%;
-  aspect-ratio: 1 / 1;
-  box-sizing: border-box;
-  overflow: hidden;
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      box-sizing: border-box;
+      overflow: hidden;
 
-  /* SHOW THE WHOLE WORD (wrap instead of ... ) */
-  white-space: normal;
-  text-overflow: clip;
-  word-break: break-word;
-  overflow-wrap: anywhere;
+      /* SHOW THE WHOLE WORD (wrap instead of ... ) */
+      white-space: normal;
+      text-overflow: clip;
+      word-break: break-word;
+      overflow-wrap: anywhere;
 
-  /* Make it look nice */
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding: 6px;
-  line-height: 1.1;
-  font-weight: 700;
-  font-size: clamp(10px, 2.6vw, 16px);
+      /* Make it look nice */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 6px;
+      line-height: 1.1;
+      font-weight: 700;
+      font-size: clamp(10px, 2.6vw, 16px);
 
-  transform: none !important;
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-}
+      transform: none !important;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+
     .mem-card.revealed, .mem-card:active, .mem-card:focus {
       transform: none !important;
     }
@@ -115,7 +110,7 @@ function applyInputMobileAttrs(inputEl, { numeric = false } = {}) {
   inputEl.setAttribute("autocapitalize", "none");
   inputEl.setAttribute("autocomplete", "off");
   inputEl.setAttribute("spellcheck", "false");
-  inputEl.setAttribute("enterkeyhint", "done"); // shows a "Done"/check key on many keyboards
+  inputEl.setAttribute("enterkeyhint", "done");
   if (numeric) inputEl.setAttribute("inputmode", "numeric");
 }
 
@@ -194,8 +189,8 @@ const session = {
   participantId: getStored("etl_participantId") || null,
   sessionId: getStored("etl_sessionId") || uuidLike(),
   startedAt: getStored("etl_startedAt") || nowISO(),
-  stage: getStored("etl_stage") || "start", // start, g1, q1, g2, q2, g3, q3, g4, q4, end
-  mode: getStored("etl_mode") || "normal",   // normal | freeplay
+  stage: getStored("etl_stage") || "start",
+  mode: getStored("etl_mode") || "normal",
 };
 
 setStored("etl_sessionId", session.sessionId);
@@ -207,17 +202,14 @@ function updateBadges() {
 }
 
 async function postPayload(payload) {
-  // Keep a local archive (optional but smart)
   const local = getStored("etl_localLog", []);
   local.push(payload);
   setStored("etl_localLog", local);
 
-  // Buffer for recap/exit-only upload
   const buf = getStored("etl_logBuffer", []);
   buf.push(payload);
   setStored("etl_logBuffer", buf);
 
-  // Never send during gameplay/questions
   return { ok: true, buffered: true };
 }
 
@@ -247,11 +239,9 @@ async function flushLogs() {
       })
     });
 
-    // Clear buffer after send
     setStored("etl_logBuffer", []);
     return { ok: true };
   } catch (e) {
-    // Keep buffer so it can retry later
     setStatus("Upload failed, saved locally (will retry on recap/exit).");
     return { ok: false, error: String(e) };
   } finally {
@@ -259,18 +249,12 @@ async function flushLogs() {
   }
 }
 
-/*
-  Best-effort flush when the user leaves the page.
-  Use sendBeacon because browsers often cancel fetch() during unload.
-*/
 function flushLogsOnExit() {
   try {
     if (!CONFIG.API_ENDPOINT) return;
 
-    // Pull current buffer
     const buf = getStored("etl_logBuffer", []);
 
-    // Always add a final "exit" event so there's something new to send
     const exitEvent = {
       kind: "event",
       participantId: session.participantId,
@@ -301,12 +285,9 @@ function flushLogsOnExit() {
 
     const ok = navigator.sendBeacon && navigator.sendBeacon(CONFIG.API_ENDPOINT, blob);
 
-    // If beacon queued successfully, clear buffer to avoid double-post next load
     if (ok) setStored("etl_logBuffer", []);
-    else setStored("etl_logBuffer", buf); // keep it for recap retry later
-  } catch {
-    // do nothing, page is leaving anyway
-  }
+    else setStored("etl_logBuffer", buf);
+  } catch {}
 }
 
 function basePayload(kind) {
@@ -336,16 +317,67 @@ async function logScore(gameId, runStats, bestStats) {
 function getBest() {
   return getStored("etl_best", {
     simon: { bestLevel: 0 },
-    memory: { bestTimeMs: null }, // lower is better
+    memory: { bestTimeMs: null },
     verbal: { bestScore: 0 },
     math: { bestScore: 0 },
   });
 }
 function setBest(best) { setStored("etl_best", best); }
-
 function betterTime(newMs, oldMs) {
   if (oldMs == null) return true;
   return newMs < oldMs;
+}
+
+/* ---------------- Survey question bank + answer storage ----------------
+   We store "latest answers" locally so recap editing can be prefilled.
+*/
+const ANSWER_STORE_KEY = "etl_answers_latest";
+
+/* Keep IDs EXACTLY matching what you log to the sheet */
+const QUESTION_BANK = [
+  {
+    blockId: "Q1",
+    questions: [
+      { id: "Phone Number", type: "text", prompt: "Phone Number", required: true },
+      { id: "Drivers", type: "mc", prompt: "Can you drive?", options: ["Yes", "No", "Yes, but arriving late/missing a day"], required: true },
+      { id: "Num of Passengers", type: "mc", prompt: "If you can drive, how many OTHER people can you take", options: ["0", "1", "2","3","4","5","6","7"], required: false },
+    ]
+  },
+  {
+    blockId: "Q2",
+    questions: [
+      { id: "Time", type: "mc", prompt: "What time can you leave on Friday?", options: ["2-4", "4-6", "6-8","8+","Whenever"], required: true },
+      { id: "Other Notes", type: "text", prompt: "Any other statements about rides? This includes whether you will be missing a day/arriving late or early, or driving yourself", placeholder: "Not required if N/A", required: false },
+    ]
+  },
+  {
+    blockId: "Q3",
+    questions: [
+      { id: "Kid Toucher", type: "mc", prompt: "Would you rather inappropriately touch a kid, or everyone thinks that you touched a kid?", options: ["Touch the kid", "Everyone thinks you're a kid toucher"], required: true },
+      { id: "Snitch", type: "mc", prompt: "You and Ethan are arrested for allegedly sliming out the ops. If you snitch, you get no jail time, but Ethan gets the full sentence. If you don't, theres a 20% chance neither gets jail time, but a 80% chance both of you get the full sentence. Do you snitch?", options: ["I would never snitch on my boys", "Fuck that guy, I'm a rat"], required: true },
+      { id: "Haiku", type: "text", prompt: "Write a Haiku (3 lines-5,7,5 syllables)", placeholder: "Be creative. Make me laugh", required: true },
+    ]
+  },
+  {
+    blockId: "Q4",
+    questions: [
+      { id: "AirBandB", type: "mc", prompt: "Were you told you would be staying at the AirB&B instead of the Hotel", options: ["Yes, I was told I would be staying at the AirB&B", "No, I will be staying at the Hotels"], required: true },
+      { id: "Suggestions", type: "text", prompt: "Do you have any ride form questions? Place any potential future questions here and I may pick them for the future.", required: false }
+    ]
+  }
+];
+
+function getLatestAnswers() {
+  return getStored(ANSWER_STORE_KEY, {});
+}
+function setLatestAnswers(obj) {
+  setStored(ANSWER_STORE_KEY, obj);
+}
+function mergeLatestAnswers(newPartial) {
+  const cur = getLatestAnswers();
+  const merged = { ...cur, ...newPartial };
+  setLatestAnswers(merged);
+  return merged;
 }
 
 /* ---------------- Survey blocks ---------------- */
@@ -362,6 +394,7 @@ async function runTerminalSurvey(blockId, questions) {
   form.className = "grid";
   form.style.marginTop = "12px";
 
+  const latest = getLatestAnswers();
   const answers = {};
 
   for (const q of questions) {
@@ -378,6 +411,9 @@ async function runTerminalSurvey(blockId, questions) {
       optWrap.className = "grid two";
       optWrap.style.marginTop = "10px";
 
+      const initial = latest[q.id] ?? null;
+      if (initial != null) answers[q.id] = initial;
+
       q.options.forEach((opt) => {
         const label = document.createElement("label");
         label.style.display = "flex";
@@ -389,6 +425,8 @@ async function runTerminalSurvey(blockId, questions) {
         radio.type = "radio";
         radio.name = q.id;
         radio.value = opt;
+        if (initial === opt) radio.checked = true;
+
         radio.addEventListener("change", () => { answers[q.id] = opt; });
 
         const span = document.createElement("span");
@@ -402,8 +440,10 @@ async function runTerminalSurvey(blockId, questions) {
       qWrap.appendChild(optWrap);
     } else if (q.type === "text") {
       const ta = document.createElement("textarea");
-      answers[q.id] = ""
+      const initial = (latest[q.id] ?? "");
+      answers[q.id] = initial;
       ta.placeholder = q.placeholder || "Type here…";
+      ta.value = initial;
       ta.addEventListener("input", () => { answers[q.id] = ta.value; });
       ta.style.marginTop = "10px";
       qWrap.appendChild(ta);
@@ -435,12 +475,170 @@ async function runTerminalSurvey(blockId, questions) {
     }
   }
 
+  // Save latest answers locally (for recap edit prefill)
+  mergeLatestAnswers(answers);
+
+  // Log answers
   for (const q of questions) {
     await logResponse(q.id, answers[q.id] ?? null);
   }
   await logEvent("survey_block_complete", { blockId, questions: questions.map(q => q.id) });
 
   return answers;
+}
+
+/* ---------------- Recap Answer Editor (RESTORED) ---------------- */
+
+async function openAnswerEditor() {
+  const latest = getLatestAnswers();
+
+  const container = document.createElement("div");
+  container.className = "terminal";
+  container.innerHTML = `
+    <div><span class="kbd">TERMINAL</span> Review / Edit Answers</div>
+    <div class="puzzle-hint">Edits are saved and submitted to the sheet.</div>
+  `;
+
+  const form = document.createElement("div");
+  form.className = "grid";
+  form.style.marginTop = "12px";
+
+  // Map id -> control getter
+  const controls = [];
+
+  for (const block of QUESTION_BANK) {
+    const blockCard = document.createElement("div");
+    blockCard.className = "card";
+    blockCard.innerHTML = `<div class="h1">Section ${block.blockId}</div>`;
+    form.appendChild(blockCard);
+
+    for (const q of block.questions) {
+      const qWrap = document.createElement("div");
+      qWrap.className = "card";
+
+      const title = document.createElement("div");
+      title.style.fontWeight = "700";
+      title.textContent = q.prompt;
+      qWrap.appendChild(title);
+
+      if (q.type === "mc") {
+        const optWrap = document.createElement("div");
+        optWrap.className = "grid two";
+        optWrap.style.marginTop = "10px";
+
+        const initial = latest[q.id] ?? null;
+
+        q.options.forEach((opt) => {
+          const label = document.createElement("label");
+          label.style.display = "flex";
+          label.style.gap = "8px";
+          label.style.alignItems = "center";
+          label.style.cursor = "pointer";
+
+          const radio = document.createElement("input");
+          radio.type = "radio";
+          radio.name = `edit_${q.id}`;
+          radio.value = opt;
+          if (initial === opt) radio.checked = true;
+
+          const span = document.createElement("span");
+          span.textContent = opt;
+
+          label.appendChild(radio);
+          label.appendChild(span);
+          optWrap.appendChild(label);
+        });
+
+        qWrap.appendChild(optWrap);
+
+        controls.push({
+          id: q.id,
+          type: "mc",
+          required: !!q.required,
+          getValue: () => {
+            const checked = form.querySelector(`input[name="edit_${CSS.escape(q.id)}"]:checked`);
+            return checked ? checked.value : "";
+          }
+        });
+      } else if (q.type === "text") {
+        const ta = document.createElement("textarea");
+        ta.placeholder = q.placeholder || "Type here…";
+        ta.value = (latest[q.id] ?? "");
+        ta.style.marginTop = "10px";
+        qWrap.appendChild(ta);
+
+        controls.push({
+          id: q.id,
+          type: "text",
+          required: !!q.required,
+          getValue: () => ta.value
+        });
+      }
+
+      const req = document.createElement("div");
+      req.className = "puzzle-hint";
+      req.textContent = q.required ? "Required" : "Optional";
+      qWrap.appendChild(req);
+
+      form.appendChild(qWrap);
+    }
+  }
+
+  container.appendChild(form);
+
+  const res = await modal({
+    title: "Review / Edit Answers",
+    bodyNode: container,
+    okText: "Save changes",
+    cancelText: "Cancel"
+  });
+
+  if (!res.ok) return;
+
+  // Build updated answers
+  const updated = {};
+  for (const c of controls) {
+    const v = c.getValue();
+    if (c.required) {
+      if (c.type === "mc" && !v) {
+        await modal({ title: "Missing Required", bodyHTML: `You didn't select an option for: <span class="kbd">${c.id}</span>`, okText: "OK" });
+        return await openAnswerEditor();
+      }
+      if (c.type === "text" && (!v || !v.trim())) {
+        await modal({ title: "Missing Required", bodyHTML: `Missing: <span class="kbd">${c.id}</span>`, okText: "OK" });
+        return await openAnswerEditor();
+      }
+    }
+    updated[c.id] = (c.type === "text") ? (v ?? "") : (v || "");
+  }
+
+  // Detect what changed
+  const prev = getLatestAnswers();
+  const changedKeys = [];
+  for (const k of Object.keys(updated)) {
+    const a = (prev[k] ?? "");
+    const b = (updated[k] ?? "");
+    if (a !== b) changedKeys.push(k);
+  }
+
+  // Save locally
+  mergeLatestAnswers(updated);
+
+  // Log all responses again (safe for overwrite-style sheet logic)
+  // If you prefer only changedKeys, flip this loop.
+  for (const k of Object.keys(updated)) {
+    await logResponse(k, updated[k]);
+  }
+  await logEvent("answers_edited", { changedKeys });
+
+  // Try to flush immediately since user explicitly saved
+  await flushLogs();
+
+  await modal({
+    title: "Saved",
+    bodyHTML: `<div class="success">Edits saved and submitted.</div>`,
+    okText: "Nice"
+  });
 }
 
 /* ---------------- Flow control ---------------- */
@@ -491,7 +689,6 @@ function renderStart() {
 `;
   els.screen.appendChild(box);
 
-  // Mobile: prevent zoom and make the keyboard friendly
   const pidInput = document.getElementById("pidInput");
   applyInputMobileAttrs(pidInput, { numeric: false });
   if (pidInput) {
@@ -635,7 +832,6 @@ function renderSimon() {
   }
 
   async function exitAfterGame() {
-    // normal flow goes to questions, freeplay returns to recap
     if (session.mode === "freeplay") setStage("end");
     else setStage("q1");
   }
@@ -725,11 +921,7 @@ function renderSurvey1() {
   els.panelTitle.textContent = "Questions 1";
   els.panelBody.textContent = "Survey block 1.";
   els.panelActions.appendChild(button("Open Terminal", async () => {
-    await runTerminalSurvey("Q1", [
-      { id: "Phone Number", type: "text", prompt: "Phone Number", required: true },
-      { id: "Drivers", type: "mc", prompt: "Can you drive?", options: ["Yes", "No", "Yes, but arriving late/missing a day"], required: true },
-      { id: "Num of Passengers", type: "mc", prompt: "If you can drive, how many OTHER people can you take", options: ["0", "1", "2","3","4","5","6","7"], required: false },
-    ]);
+    await runTerminalSurvey("Q1", QUESTION_BANK[0].questions);
     setStage("g2");
   }, "btn ok"));
 }
@@ -739,10 +931,7 @@ function renderSurvey2() {
   els.panelTitle.textContent = "Questions 2";
   els.panelBody.textContent = "Survey block 2.";
   els.panelActions.appendChild(button("Open Terminal", async () => {
-    await runTerminalSurvey("Q2", [
-      { id: "Time", type: "mc", prompt: "What time can you leave on Friday?", options: ["2-4", "4-6", "6-8","8+","Whenever"], required: true },
-      { id: "Other Notes", type: "text", prompt: "Any other statements about rides? This includes whether you will be missing a day/arriving late or early, or driving yourself", placeholder: "Not required if N/A", required: false },
-    ]);
+    await runTerminalSurvey("Q2", QUESTION_BANK[1].questions);
     setStage("g3");
   }, "btn ok"));
 }
@@ -752,11 +941,7 @@ function renderSurvey3() {
   els.panelTitle.textContent = "Questions 3";
   els.panelBody.textContent = "Survey block 3.";
   els.panelActions.appendChild(button("Open Terminal", async () => {
-    await runTerminalSurvey("Q3", [
-      { id: "Kid Toucher", type: "mc", prompt: "Would you rather inappropriately touch a kid, or everyone thinks that you touched a kid?", options: ["Touch the kid", "Everyone thinks you're a kid toucher"], required: true },
-      { id: "Snitch", type: "mc", prompt: "You and Ethan are arrested for allegedly sliming out the ops. If you snitch, you get no jail time, but Ethan gets the full sentence. If you don't, theres a 20% chance neither gets jail time, but a 80% chance both of you get the full sentence. Do you snitch?", options: ["I would never snitch on my boys", "Fuck that guy, I'm a rat"], required: true },
-      { id: "Haiku", type: "text", prompt: "Write a Haiku (3 lines-5,7,5 syllables)", placeholder: "Be creative. Make me laugh", required: true },
-    ]);
+    await runTerminalSurvey("Q3", QUESTION_BANK[2].questions);
     setStage("g4");
   }, "btn ok"));
 }
@@ -766,16 +951,13 @@ function renderSurvey4() {
   els.panelTitle.textContent = "Questions 4";
   els.panelBody.textContent = "Survey block 4.";
   els.panelActions.appendChild(button("Open Terminal", async () => {
-    await runTerminalSurvey("Q4", [
-      { id: "AirBandB", type: "mc", prompt: "Were you told you would be staying at the AirB&B instead of the Hotel", options: ["Yes, I was told I would be staying at the AirB&B", "No, I will be staying at the Hotels"], required: true },
-      { id: "Suggestions", type: "text", prompt: "Do you have any ride form questions? Place any potential future questions here and I may pick them for the future.", required: false }
-    ]);
+    await runTerminalSurvey("Q4", QUESTION_BANK[3].questions);
     await logEvent("session_complete", { finishedAt: nowISO() });
     setStage("end");
   }, "btn ok"));
 }
 
-/* ---------------- Game 2: Timed Memory Match (more pairs, frisbee words) ---------------- */
+/* ---------------- Game 2: Timed Memory Match ---------------- */
 
 function renderMemoryTimed() {
   const best = getBest();
@@ -790,7 +972,7 @@ function renderMemoryTimed() {
   `;
   els.screen.appendChild(hud);
 
-  const TOTAL_PAIRS = 8; // more matches
+  const TOTAL_PAIRS = 8;
 
   let state = initMemoryState(TOTAL_PAIRS);
   let first = null;
@@ -826,24 +1008,24 @@ function renderMemoryTimed() {
       b.className = "mem-card";
       b.type = "button";
       preventFocusJump(b);
-      // Extra insurance: keep size stable even if external CSS tries to animate/scale
+
       b.style.width = "100%";
       b.style.aspectRatio = "1 / 1";
       b.style.boxSizing = "border-box";
       b.style.overflow = "hidden";
-b.style.whiteSpace = "normal";
-b.style.textOverflow = "clip";
-b.style.wordBreak = "break-word";
-b.style.overflowWrap = "anywhere";
-b.style.textAlign = "center";
-b.style.padding = "6px";
-b.style.lineHeight = "1.1";
-b.style.fontWeight = "700";
-b.style.fontSize = "clamp(10px, 2.6vw, 16px)";
-b.style.display = "flex";
-b.style.alignItems = "center";
-b.style.justifyContent = "center";
-b.style.transform = "none";
+      b.style.whiteSpace = "normal";
+      b.style.textOverflow = "clip";
+      b.style.wordBreak = "break-word";
+      b.style.overflowWrap = "anywhere";
+      b.style.textAlign = "center";
+      b.style.padding = "6px";
+      b.style.lineHeight = "1.1";
+      b.style.fontWeight = "700";
+      b.style.fontSize = "clamp(10px, 2.6vw, 16px)";
+      b.style.display = "flex";
+      b.style.alignItems = "center";
+      b.style.justifyContent = "center";
+      b.style.transform = "none";
 
       if (c.matched) b.classList.add("matched");
       if (c.revealed) b.classList.add("revealed");
@@ -962,7 +1144,6 @@ b.style.transform = "none";
 }
 
 function initMemoryState(pairs) {
-  // Ultimate frisbee-related pairs (expand as needed)
   const base = [
     "disc","handler","cutter","huck","layout","mark",
     "stack","zone","pull","flick","backhand","forehand",
@@ -970,14 +1151,12 @@ function initMemoryState(pairs) {
     "reset","poach","clapcatch","endzone","upline","pivot"
   ];
 
-  // pick N unique words
   const pool = shuffle([...base]).slice(0, pairs);
-  const values = shuffle(pool.flatMap(w => [w, w])); // make pairs and shuffle
-
+  const values = shuffle(pool.flatMap(w => [w, w]));
   return { cards: values.map(v => ({ value: v, revealed: false, matched: false })) };
 }
 
-/* ---------------- Game 3: Verbal Memory (no back-to-back) ---------------- */
+/* ---------------- Game 3: Verbal Memory ---------------- */
 
 function renderVerbalMemory() {
   const best = getBest();
@@ -1016,21 +1195,18 @@ function renderVerbalMemory() {
   }
 
   function nextWord() {
-    // 65% chance new word if available, else repeat, but never back-to-back same
     let chooseRepeat = Math.random() < 0.35 && seen.size > 0;
     if (pool.length === 0) chooseRepeat = true;
 
     if (chooseRepeat) {
       let arr = Array.from(seen).filter(w => w !== lastWord);
       if (arr.length === 0) {
-        // only possible repeat is lastWord; if we still have new words, force new
         if (pool.length > 0) chooseRepeat = false;
-        else arr = Array.from(seen); // unavoidable
+        else arr = Array.from(seen);
       }
       if (chooseRepeat) current = arr[Math.floor(Math.random() * arr.length)];
     }
     if (!chooseRepeat) {
-      // ensure new isn't equal to lastWord (rare but handle)
       let tries = 0;
       do {
         current = pool.pop();
@@ -1053,7 +1229,6 @@ function renderVerbalMemory() {
 
     await logEvent("verbal_pick", { word: current, choice, isSeen, correct });
 
-    // After any display, it is now "seen"
     seen.add(current);
 
     if (correct) {
@@ -1168,7 +1343,6 @@ function renderMathRace() {
 
   const ansEl = () => document.getElementById("mrAns");
 
-  // Mobile: numeric keyboard + no zoom on focus
   applyInputMobileAttrs(ansEl(), { numeric: true });
 
   let score = 0;
@@ -1188,7 +1362,6 @@ function renderMathRace() {
   }
 
   function makeProblem() {
-    // include / by constructing divisible problems
     const opsByDiff = (d) => {
       if (d <= 2) return ["+","-","*"];
       return ["+","-","*","/"];
@@ -1199,7 +1372,6 @@ function renderMathRace() {
     let a, b, answer, text;
 
     if (op === "/") {
-      // Build: (a*b) / b so it's integer
       b = randInt(2, difficulty <= 3 ? 9 : 12);
       a = randInt(2, difficulty <= 3 ? 12 : 20);
       const prod = a * b;
@@ -1212,7 +1384,6 @@ function renderMathRace() {
       else if (difficulty === 4) { a = randInt(20, 70); b = randInt(10, 50); }
       else { a = randInt(30, 120); b = randInt(2, 25); }
 
-      // Ensure subtraction never goes negative (mobile numeric keyboard has no minus)
       if (op === "-" && a < b) { const tmp = a; a = b; b = tmp; }
 
       if (op === "+") answer = a + b;
@@ -1244,7 +1415,7 @@ function renderMathRace() {
     ansEl().value = "";
     ansEl().focus();
 
-    const PER_Q_MS = 5000; // 5 seconds
+    const PER_Q_MS = 5000;
     deadline = performance.now() + PER_Q_MS;
 
     if (timer) clearInterval(timer);
@@ -1328,8 +1499,6 @@ function renderMathRace() {
     }
   }
 
-  // Mobile "Done"/check key often triggers change/blur instead of keydown Enter.
-  // We listen to multiple events and debounce to avoid double-submits.
   let _lastSubmitMs = 0;
   function submitDebounced() {
     const t = Date.now();
@@ -1345,7 +1514,6 @@ function renderMathRace() {
     if (e.key === "Enter") submitDebounced();
   });
   ansEl().addEventListener("change", () => {
-    // Fired when user taps Done/✓ on mobile keyboards
     submitDebounced();
   });
 
@@ -1361,7 +1529,7 @@ function renderMathRace() {
   }, "btn ok"));
 }
 
-/* ---------------- End: replay each game without questions ---------------- */
+/* ---------------- End: replay each game without questions + EDIT ANSWERS BUTTON ---------------- */
 
 function renderEnd() {
   flushLogs();
@@ -1377,9 +1545,9 @@ function renderEnd() {
     <div class="p"><span class="kbd">Verbal</span> best score: ${best.verbal.bestScore}</div>
     <div class="p"><span class="kbd">Math</span> best score: ${best.math.bestScore}</div>
     <div class="puzzle-hint">
-  Your responses have been sent. Every time you set a new high score, it’s saved and updated too.
-  Replay the games on the right panel to improve your scores.
-</div>
+      Your responses have been sent. Every time you set a new high score, it’s saved and updated too.
+      Replay the games on the right panel to improve your scores.
+    </div>
   `;
   els.screen.appendChild(c);
 
@@ -1391,6 +1559,11 @@ function renderEnd() {
     setStage(stage);
   };
 
+  // RESTORED: edit answers button
+  els.panelActions.appendChild(button("Review / Edit Answers", async () => {
+    await openAnswerEditor();
+  }, "btn secondary"));
+
   els.panelActions.appendChild(button("Play Simon", () => go("g1"), "btn ok"));
   els.panelActions.appendChild(button("Play Memory Match", () => go("g2"), "btn ok"));
   els.panelActions.appendChild(button("Play Verbal Memory", () => go("g3"), "btn ok"));
@@ -1399,7 +1572,7 @@ function renderEnd() {
   els.panelActions.appendChild(button("Submit Another Response", async () => {
     [
       "etl_participantId","etl_sessionId","etl_startedAt","etl_stage",
-      "etl_best","etl_localLog","etl_mode"
+      "etl_best","etl_localLog","etl_mode", ANSWER_STORE_KEY
     ].forEach(k => localStorage.removeItem(k));
     location.reload();
   }, "btn danger"));
@@ -1422,7 +1595,6 @@ function shuffle(arr) {
 (function init() {
   injectMobilePatchCSS();
 
-  // Upload on leaving the page (best-effort)
   window.addEventListener("pagehide", flushLogsOnExit);
   window.addEventListener("beforeunload", flushLogsOnExit);
 
@@ -1433,8 +1605,4 @@ function shuffle(arr) {
   } else {
     render();
   }
-
 })();
-
-
-
