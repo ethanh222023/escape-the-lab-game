@@ -7,13 +7,6 @@
    - Recap screen includes "Review / Edit Answers" button
    - Shows all questions, prefilled with the user's latest answers
    - Any edits are saved locally + logged and flushed (same as recap entry)
-
-   Mobile compatibility fixes (NEW):
-   - Prevent iOS/Android auto-zoom on input focus (force >=16px font)
-   - Prevent “screen jump” from button focus on memory tiles / simon buttons
-   - Make modal + main area scroll nicely with keyboard (VisualViewport)
-   - Add touch-action: manipulation + remove tap highlight for better tapping
-   - Ensure a sane viewport meta tag exists (if your HTML forgot it)
 */
 
 const CONFIG = {
@@ -41,129 +34,75 @@ function setStatus(msg) { els.status.textContent = `Status: ${msg}`; }
 function nowISO() { return new Date().toISOString(); }
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-/* ---------------- Mobile compatibility helpers ---------------- */
+/* ---------------- Mobile compatibility patches ----------------
+   Mobile browsers love to:
+   - zoom the page when an input is focused (if font-size < 16px)
+   - scroll/jump when buttons get focus (especially inside grids)
+   - resize viewport when the keyboard opens
 
-function ensureViewportMeta() {
-  // If index.html already has one, we leave it alone.
-  // If not, we add a sane default so mobile sizing is not cursed.
-  let meta = document.querySelector('meta[name="viewport"]');
-  if (!meta) {
-    meta = document.createElement("meta");
-    meta.name = "viewport";
-    document.head.appendChild(meta);
-  }
-  // Don’t block user zoom. Accessibility > aesthetics.
-  // But do set typical values so layout is stable.
-  meta.setAttribute("content", "width=device-width, initial-scale=1, viewport-fit=cover");
+   We can't control all CSS from here, so we inject a small override stylesheet.
+*/
+let _mobilePatchInjected = false;
+
+function isMobileish() {
+  return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (window.innerWidth <= 900);
 }
 
-let _mobileStyleInjected = false;
-function injectMobileStylePatch() {
-  if (_mobileStyleInjected) return;
-  _mobileStyleInjected = true;
+function injectMobilePatchCSS() {
+  if (_mobilePatchInjected) return;
+  _mobilePatchInjected = true;
 
   const style = document.createElement("style");
   style.id = "etl-mobile-patch";
   style.textContent = `
-    /* Prevent iOS zoom-on-focus by ensuring inputs are >=16px */
-    input, textarea, select, button {
+    /* Stop iOS Safari from zooming on focus by ensuring >=16px inputs */
+    input, textarea, select {
       font-size: 16px !important;
       line-height: 1.2 !important;
       -webkit-text-size-adjust: 100%;
     }
 
-    /* Better tapping, less accidental double-tap zoom */
-    .simon-btn, .mem-card, .btn, button {
-      touch-action: manipulation;
+    /* Memory cards: keep fixed size and don't scale when revealed/focused */
+    .memory-grid { 
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+    .mem-card {
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      box-sizing: border-box;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      transform: none !important;
       -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+    .mem-card.revealed, .mem-card:active, .mem-card:focus {
+      transform: none !important;
     }
 
-    /* When keyboard appears, keep content scrollable inside panels/modals */
-    #screen {
-      overflow: auto;
-      -webkit-overflow-scrolling: touch;
-    }
-
-    /* Modal body should scroll rather than pushing layout around */
-    #modalBody {
-      overflow: auto;
-      -webkit-overflow-scrolling: touch;
-      overscroll-behavior: contain;
-    }
-
-    /* Avoid weird rubber-banding scroll behavior on iOS */
-    html, body {
-      overscroll-behavior: contain;
-    }
+    /* Buttons: reduce scroll-jump */
+    button { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
   `;
   document.head.appendChild(style);
 }
 
-function setViewportVars() {
-  const h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-  const w = window.visualViewport ? window.visualViewport.width : window.innerWidth;
-  document.documentElement.style.setProperty("--vvh", `${h}px`);
-  document.documentElement.style.setProperty("--vvw", `${w}px`);
-
-  // Keep the main play area stable and scrollable if needed.
-  if (els.screen) {
-    // Don’t hard-lock height to avoid fighting your CSS, just ensure it can fit.
-    els.screen.style.minHeight = `${Math.max(320, h - 10)}px`;
-  }
-}
-
-function setupVisualViewportHandlers() {
-  setViewportVars();
-  if (!window.visualViewport) return;
-
-  const vv = window.visualViewport;
-  vv.addEventListener("resize", setViewportVars);
-  vv.addEventListener("scroll", setViewportVars);
-}
-
-function safeFocus(el) {
+function preventFocusJump(el) {
   if (!el) return;
-  try {
-    // preventScroll works on modern browsers
-    el.focus({ preventScroll: true });
-  } catch {
-    try { el.focus(); } catch {}
-  }
+  el.setAttribute("tabindex", "-1");
+  el.addEventListener("mousedown", (e) => e.preventDefault());
+  el.addEventListener("touchstart", () => { try { el.blur(); } catch {} }, { passive: true });
 }
 
-function applyMobileInputFixes(root) {
-  if (!root) return;
-
-  // Inputs/textarea: prevent zoom-on-focus + help mobile keyboards
-  root.querySelectorAll("input, textarea").forEach((el) => {
-    el.style.fontSize = "16px";
-    el.style.lineHeight = "1.2";
-    el.style.maxWidth = "100%";
-
-    if (el.tagName.toLowerCase() === "input") {
-      el.setAttribute("autocomplete", "off");
-      el.setAttribute("autocapitalize", "none");
-      el.setAttribute("spellcheck", "false");
-    } else {
-      el.setAttribute("autocapitalize", "none");
-      el.setAttribute("spellcheck", "false");
-    }
-  });
+function applyInputMobileAttrs(inputEl, { numeric = false } = {}) {
+  if (!inputEl) return;
+  inputEl.style.fontSize = "16px";
+  inputEl.setAttribute("autocapitalize", "none");
+  inputEl.setAttribute("autocomplete", "off");
+  inputEl.setAttribute("spellcheck", "false");
+  inputEl.setAttribute("enterkeyhint", "done"); // shows a "Done"/check key on many keyboards
+  if (numeric) inputEl.setAttribute("inputmode", "numeric");
 }
-
-function preventFocusScrollJump(btn) {
-  // Mobile Safari loves scrolling focused buttons into view.
-  // Block the focus change that triggers the jump, while keeping click working.
-  if (!btn) return;
-  btn.setAttribute("tabindex", "-1");
-  btn.addEventListener("mousedown", (e) => e.preventDefault());
-  btn.addEventListener("touchstart", () => {
-    // Don’t focus on touch.
-    try { btn.blur(); } catch {}
-  }, { passive: true });
-}
-
-/* ---------------- Core utils ---------------- */
 
 function uuidLike() {
   return "xxxxxx-xxxx-4xxx-yxxx-xxxxxxxx".replace(/[xy]/g, c => {
@@ -184,10 +123,8 @@ function button(label, onClick, cls = "btn primary") {
   const b = document.createElement("button");
   b.className = cls;
   b.textContent = label;
-  b.type = "button";
   b.addEventListener("click", onClick);
-  // mobile: reduce focus-induced jumping
-  preventFocusScrollJump(b);
+  preventFocusJump(b);
   return b;
 }
 function card(title, text) {
@@ -210,13 +147,6 @@ function modal({ title, bodyNode = null, bodyHTML = null, okText = "OK", cancelT
     els.modalBody.innerHTML = "";
     if (bodyNode) els.modalBody.appendChild(bodyNode);
     else if (bodyHTML != null) els.modalBody.innerHTML = bodyHTML;
-
-    // Make modal scroll nicely with keyboard on phones
-    const h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-    els.modalBody.style.maxHeight = `${Math.max(220, h - 220)}px`;
-    els.modalBody.style.overflow = "auto";
-
-    applyMobileInputFixes(els.modalBody);
 
     els.modalOk.textContent = okText;
 
@@ -379,27 +309,9 @@ function basePayload(kind) {
 async function logEvent(eventType, payload = {}) {
   await postPayload({ ...basePayload("event"), eventType, payload });
 }
-
-/*
-  Store latest answers locally so recap can edit them.
-  This is the "source of truth" for the edit screen UI.
-*/
-function getLatestAnswers() {
-  return getStored("etl_answers", {});
-}
-function setLatestAnswers(map) {
-  setStored("etl_answers", map);
-}
-
 async function logResponse(questionId, response) {
-  // update local "latest answers"
-  const latest = getLatestAnswers();
-  latest[questionId] = (response === undefined) ? null : response;
-  setLatestAnswers(latest);
-
   await postPayload({ ...basePayload("response"), questionId, response });
 }
-
 async function logScore(gameId, runStats, bestStats) {
   await postPayload({ ...basePayload("score"), gameId, runStats, bestStats });
 }
@@ -419,193 +331,6 @@ function setBest(best) { setStored("etl_best", best); }
 function betterTime(newMs, oldMs) {
   if (oldMs == null) return true;
   return newMs < oldMs;
-}
-
-/* ---------------- Questions catalog (for recap editing) ---------------- */
-
-function getAllQuestionsCatalog() {
-  // Keep this in sync with your 4 survey blocks.
-  // We use this for editing on recap screen.
-  return [
-    // Q1
-    { blockId: "Q1", id: "Phone Number", type: "text", prompt: "Phone Number", required: true },
-    { blockId: "Q1", id: "Drivers", type: "mc", prompt: "Can you drive?", options: ["Yes", "No", "Yes, but arriving late/missing a day"], required: true },
-    { blockId: "Q1", id: "Num of Passengers", type: "mc", prompt: "If you can drive, how many OTHER people can you take", options: ["0", "1", "2","3","4","5","6","7"], required: false },
-
-    // Q2
-    { blockId: "Q2", id: "Time", type: "mc", prompt: "What time can you leave on Friday?", options: ["2-4", "4-6", "6-8","8+","Whenever"], required: true },
-    { blockId: "Q2", id: "Other Notes", type: "text", prompt: "Any other statements about rides? This includes whether you will be missing a day/arriving late or early, or driving yourself", placeholder: "Not required if N/A", required: false },
-
-    // Q3
-    { blockId: "Q3", id: "Kid Toucher", type: "mc", prompt: "Would you rather inappropriately touch a kid, or everyone thinks that you touched a kid?", options: ["Touch the kid", "Everyone thinks you're a kid toucher"], required: true },
-    { blockId: "Q3", id: "Snitch", type: "mc", prompt: "You and Ethan are arrested for allegedly sliming out the ops. If you snitch, you get no jail time, but Ethan gets the full sentence. If you don't, theres a 20% chance neither gets jail time, but a 80% chance both of you get the full sentence. Do you snitch?", options: ["I would never snitch on my boys", "Fuck that guy, I'm a rat"], required: true },
-    { blockId: "Q3", id: "Haiku", type: "text", prompt: "Write a Haiku (3 lines-5,7,5 syllables)", placeholder: "Be creative. Make me laugh", required: true },
-
-    // Q4
-    { blockId: "Q4", id: "AirBandB", type: "mc", prompt: "Were you confirmed to be staying at the AirB&B? (Only say yes if you were told you were)", options: ["Yes, I am staying at the AirB&B", "No, I am staying at the Hotel"], required: true },
-    { blockId: "Q4", id: "Suggestions", type: "text", prompt: "Do you have any ride form questions? Place any potential future questions here and I may pick them for the future.", required: false },
-  ];
-}
-
-async function openEditAnswersModal() {
-  const catalog = getAllQuestionsCatalog();
-  const latest = getLatestAnswers();
-
-  // Build editable form UI
-  const container = document.createElement("div");
-  container.className = "terminal";
-  container.innerHTML = `
-    <div><span class="kbd">TERMINAL</span> Review / Edit Answers</div>
-    <div class="puzzle-hint">Edit anything. Hit Save to sync to the spreadsheet.</div>
-  `;
-
-  const form = document.createElement("div");
-  form.className = "grid";
-  form.style.marginTop = "12px";
-
-  // local working copy
-  const edits = { ...latest };
-
-  // Group by blockId for readability
-  const blocks = ["Q1", "Q2", "Q3", "Q4"];
-  for (const blockId of blocks) {
-    const header = document.createElement("div");
-    header.className = "card";
-    header.innerHTML = `<div class="h1">${blockId} Answers</div><div class="p">Edit below.</div>`;
-    form.appendChild(header);
-
-    const qs = catalog.filter(q => q.blockId === blockId);
-    for (const q of qs) {
-      const qWrap = document.createElement("div");
-      qWrap.className = "card";
-
-      const title = document.createElement("div");
-      title.style.fontWeight = "700";
-      title.textContent = q.prompt;
-      qWrap.appendChild(title);
-
-      const currentVal = (latest[q.id] ?? "");
-
-      if (q.type === "mc") {
-        const optWrap = document.createElement("div");
-        optWrap.className = "grid two";
-        optWrap.style.marginTop = "10px";
-
-        q.options.forEach((opt) => {
-          const label = document.createElement("label");
-          label.style.display = "flex";
-          label.style.gap = "8px";
-          label.style.alignItems = "center";
-          label.style.cursor = "pointer";
-
-          const radio = document.createElement("input");
-          radio.type = "radio";
-          radio.name = `edit_${q.id}`;
-          radio.value = opt;
-          radio.checked = String(currentVal) === String(opt);
-          radio.addEventListener("change", () => { edits[q.id] = opt; });
-
-          const span = document.createElement("span");
-          span.textContent = opt;
-
-          label.appendChild(radio);
-          label.appendChild(span);
-          optWrap.appendChild(label);
-        });
-
-        // allow clearing optional MC
-        if (q.required !== true) {
-          const clearBtn = document.createElement("button");
-          clearBtn.className = "btn secondary";
-          clearBtn.type = "button";
-          clearBtn.textContent = "Clear";
-          clearBtn.style.marginTop = "10px";
-          clearBtn.addEventListener("click", () => {
-            edits[q.id] = "";
-            // uncheck radios
-            optWrap.querySelectorAll("input[type=radio]").forEach(r => (r.checked = false));
-          });
-          qWrap.appendChild(optWrap);
-          qWrap.appendChild(clearBtn);
-        } else {
-          qWrap.appendChild(optWrap);
-        }
-      } else if (q.type === "text") {
-        const ta = document.createElement("textarea");
-        ta.placeholder = q.placeholder || "Type here…";
-        ta.value = String(currentVal ?? "");
-        edits[q.id] = ta.value;
-        ta.addEventListener("input", () => { edits[q.id] = ta.value; });
-        ta.style.marginTop = "10px";
-        qWrap.appendChild(ta);
-      }
-
-      const req = document.createElement("div");
-      req.className = "puzzle-hint";
-      req.textContent = (q.required === true) ? "Required" : "Optional";
-      qWrap.appendChild(req);
-
-      form.appendChild(qWrap);
-    }
-  }
-
-  container.appendChild(form);
-
-  // Mobile fixes inside modal content
-  applyMobileInputFixes(container);
-
-  const res = await modal({
-    title: "Edit Answers",
-    bodyNode: container,
-    okText: "Save",
-    cancelText: "Cancel"
-  });
-
-  if (!res.ok) return;
-
-  // Validate required questions (only on save)
-  for (const q of catalog) {
-    if (q.required === true) {
-      const v = edits[q.id];
-      if (q.type === "mc" && (!v || String(v).trim() === "")) {
-        await modal({
-          title: "Missing Required",
-          bodyHTML: `<div class="fail">You must answer: <span class="kbd">${q.id}</span></div>`,
-          okText: "OK"
-        });
-        return;
-      }
-      if (q.type === "text" && (!v || !String(v).trim())) {
-        await modal({
-          title: "Missing Required",
-          bodyHTML: `<div class="fail">You must answer: <span class="kbd">${q.id}</span></div>`,
-          okText: "OK"
-        });
-        return;
-      }
-    }
-  }
-
-  // Log only changed answers (cleaner)
-  const changes = [];
-  for (const q of catalog) {
-    const prev = (latest[q.id] ?? "");
-    const next = (edits[q.id] ?? "");
-    if (String(prev) !== String(next)) {
-      changes.push({ id: q.id, from: prev, to: next });
-      await logResponse(q.id, next);
-    }
-  }
-
-  await logEvent("responses_edited", { count: changes.length, changes });
-  setStatus(changes.length ? "Edits saved. Syncing..." : "No changes to save.");
-
-  // Send immediately like recap entry does
-  await flushLogs();
-
-  // Update UI (so if they reopen editor it’s fresh)
-  // (re-render recap)
-  render();
 }
 
 /* ---------------- Survey blocks ---------------- */
@@ -662,7 +387,7 @@ async function runTerminalSurvey(blockId, questions) {
       qWrap.appendChild(optWrap);
     } else if (q.type === "text") {
       const ta = document.createElement("textarea");
-      answers[q.id] = "";
+      answers[q.id] = ""
       ta.placeholder = q.placeholder || "Type here…";
       ta.addEventListener("input", () => { answers[q.id] = ta.value; });
       ta.style.marginTop = "10px";
@@ -678,9 +403,6 @@ async function runTerminalSurvey(blockId, questions) {
   }
 
   container.appendChild(form);
-
-  // Mobile fixes inside terminal modal
-  applyMobileInputFixes(container);
 
   await modal({ title: "Terminal Interaction", bodyNode: container, okText: "Submit" });
 
@@ -726,9 +448,6 @@ function render() {
   clearNode(els.panelActions);
   updateBadges();
 
-  // Re-apply viewport vars in case keyboard/orientation changed between renders
-  setViewportVars();
-
   if (!session.participantId) return renderStart();
 
   switch (session.stage) {
@@ -747,7 +466,7 @@ function render() {
 }
 
 function renderStart() {
-  els.screen.appendChild(card("EQ Rides form", "With some fun ;)."));
+  els.screen.appendChild(card("Escape the Lab", "With some fun ;)."));
   const box = document.createElement("div");
   box.className = "card";
   box.innerHTML = `
@@ -757,13 +476,12 @@ function renderStart() {
 `;
   els.screen.appendChild(box);
 
-  // Mobile: prevent zoom + keyboard helpfulness
-  const pidInput = box.querySelector("#pidInput");
+  // Mobile: prevent zoom and make the keyboard friendly
+  const pidInput = document.getElementById("pidInput");
+  applyInputMobileAttrs(pidInput, { numeric: false });
   if (pidInput) {
-    pidInput.style.fontSize = "16px";
     pidInput.setAttribute("autocapitalize", "words");
     pidInput.setAttribute("autocomplete", "name");
-    pidInput.setAttribute("enterkeyhint", "done");
   }
 
   els.panelTitle.textContent = "Start";
@@ -776,7 +494,6 @@ function renderStart() {
     }
     session.participantId = pid || `anon_${session.sessionId.slice(0,6)}`;
     setStored("etl_participantId", session.participantId);
-
     setMode("normal");
     await logEvent("session_start", { startedAt: session.startedAt });
     setStage("start");
@@ -852,9 +569,9 @@ function renderSimon() {
   colors.forEach(c => {
     const b = document.createElement("button");
     b.className = c.cls;
-    b.type = "button";
     b.disabled = true;
-    preventFocusScrollJump(b); // mobile: stop viewport jumping
+    b.type = "button";
+    preventFocusJump(b);
     b.addEventListener("click", () => simonHandleClick(c.id));
     btnEls[c.id] = b;
     grid.appendChild(b);
@@ -1035,7 +752,6 @@ function renderSurvey4() {
   els.panelBody.textContent = "Survey block 4.";
   els.panelActions.appendChild(button("Open Terminal", async () => {
     await runTerminalSurvey("Q4", [
-      { id: "AirBandB", type: "mc", prompt: "Were you confirmed to be staying at the AirB&B? (Only say yes if you were told you were)", options: ["Yes, I am staying at the AirB&B", "No, I am staying at the Hotel"], required: true },
       { id: "Suggestions", type: "text", prompt: "Do you have any ride form questions? Place any potential future questions here and I may pick them for the future.", required: false }
     ]);
     await logEvent("session_complete", { finishedAt: nowISO() });
@@ -1043,7 +759,7 @@ function renderSurvey4() {
   }, "btn ok"));
 }
 
-/* ---------------- Game 2: Timed Memory Match ---------------- */
+/* ---------------- Game 2: Timed Memory Match (more pairs, frisbee words) ---------------- */
 
 function renderMemoryTimed() {
   const best = getBest();
@@ -1058,7 +774,7 @@ function renderMemoryTimed() {
   `;
   els.screen.appendChild(hud);
 
-  const TOTAL_PAIRS = 8;
+  const TOTAL_PAIRS = 8; // more matches
 
   let state = initMemoryState(TOTAL_PAIRS);
   let first = null;
@@ -1093,7 +809,16 @@ function renderMemoryTimed() {
       const b = document.createElement("button");
       b.className = "mem-card";
       b.type = "button";
-      preventFocusScrollJump(b); // mobile: stop viewport resizing/jumping on tap
+      preventFocusJump(b);
+      // Extra insurance: keep size stable even if external CSS tries to animate/scale
+      b.style.width = "100%";
+      b.style.aspectRatio = "1 / 1";
+      b.style.boxSizing = "border-box";
+      b.style.overflow = "hidden";
+      b.style.whiteSpace = "nowrap";
+      b.style.textOverflow = "ellipsis";
+      b.style.transform = "none";
+
       if (c.matched) b.classList.add("matched");
       if (c.revealed) b.classList.add("revealed");
       b.textContent = (c.revealed || c.matched) ? c.value : "???";
@@ -1211,6 +936,7 @@ function renderMemoryTimed() {
 }
 
 function initMemoryState(pairs) {
+  // Ultimate frisbee-related pairs (expand as needed)
   const base = [
     "disc","handler","cutter","huck","layout","mark",
     "stack","zone","pull","flick","backhand","forehand",
@@ -1218,8 +944,9 @@ function initMemoryState(pairs) {
     "reset","poach","clapcatch","endzone","upline","pivot"
   ];
 
+  // pick N unique words
   const pool = shuffle([...base]).slice(0, pairs);
-  const values = shuffle(pool.flatMap(w => [w, w]));
+  const values = shuffle(pool.flatMap(w => [w, w])); // make pairs and shuffle
 
   return { cards: values.map(v => ({ value: v, revealed: false, matched: false })) };
 }
@@ -1228,7 +955,7 @@ function initMemoryState(pairs) {
 
 function renderVerbalMemory() {
   const best = getBest();
-  els.screen.appendChild(card("Game 3: Verbal Memory", "Select New if the word hasn't come up before. Select Seen if it has. You have 3 lives"));
+  els.screen.appendChild(card("Game 3: Verbal Memory", "Seen or New. 3 lives. No back-to-back repeats."));
 
   const hud = document.createElement("div");
   hud.className = "game-hud";
@@ -1263,18 +990,21 @@ function renderVerbalMemory() {
   }
 
   function nextWord() {
+    // 65% chance new word if available, else repeat, but never back-to-back same
     let chooseRepeat = Math.random() < 0.35 && seen.size > 0;
     if (pool.length === 0) chooseRepeat = true;
 
     if (chooseRepeat) {
       let arr = Array.from(seen).filter(w => w !== lastWord);
       if (arr.length === 0) {
+        // only possible repeat is lastWord; if we still have new words, force new
         if (pool.length > 0) chooseRepeat = false;
-        else arr = Array.from(seen);
+        else arr = Array.from(seen); // unavoidable
       }
       if (chooseRepeat) current = arr[Math.floor(Math.random() * arr.length)];
     }
     if (!chooseRepeat) {
+      // ensure new isn't equal to lastWord (rare but handle)
       let tries = 0;
       do {
         current = pool.pop();
@@ -1297,6 +1027,7 @@ function renderVerbalMemory() {
 
     await logEvent("verbal_pick", { word: current, choice, isSeen, correct });
 
+    // After any display, it is now "seen"
     seen.add(current);
 
     if (correct) {
@@ -1383,7 +1114,7 @@ function buildWordPool() {
 
 function renderMathRace() {
   const best = getBest();
-  els.screen.appendChild(card("Game 4: Math Race", "5 seconds per question. Don't mess up"));
+  els.screen.appendChild(card("Game 4: Math Race", "5 seconds per question."));
 
   const hud = document.createElement("div");
   hud.className = "game-hud";
@@ -1404,23 +1135,15 @@ function renderMathRace() {
   const inputWrap = document.createElement("div");
   inputWrap.style.marginTop = "12px";
   inputWrap.innerHTML = `
-    <input id="mrAns" class="input" placeholder="Type answer and press Enter" />
+    <input id="mrAns" class="input" placeholder="Type answer, then tap Done" />
     <div class="puzzle-hint">Tip: division is always a whole number.</div>
   `;
   els.screen.appendChild(inputWrap);
 
   const ansEl = () => document.getElementById("mrAns");
 
-  // Mobile keyboard hints + prevent zoom
-  const ans = ansEl();
-  if (ans) {
-    ans.style.fontSize = "16px";
-    ans.setAttribute("inputmode", "numeric");
-    ans.setAttribute("autocomplete", "off");
-    ans.setAttribute("autocapitalize", "none");
-    ans.setAttribute("spellcheck", "false");
-    ans.setAttribute("enterkeyhint", "done");
-  }
+  // Mobile: numeric keyboard + no zoom on focus
+  applyInputMobileAttrs(ansEl(), { numeric: true });
 
   let score = 0;
   let lives = 3;
@@ -1439,6 +1162,7 @@ function renderMathRace() {
   }
 
   function makeProblem() {
+    // include / by constructing divisible problems
     const opsByDiff = (d) => {
       if (d <= 2) return ["+","-","*"];
       return ["+","-","*","/"];
@@ -1449,6 +1173,7 @@ function renderMathRace() {
     let a, b, answer, text;
 
     if (op === "/") {
+      // Build: (a*b) / b so it's integer
       b = randInt(2, difficulty <= 3 ? 9 : 12);
       a = randInt(2, difficulty <= 3 ? 12 : 20);
       const prod = a * b;
@@ -1460,6 +1185,9 @@ function renderMathRace() {
       else if (difficulty === 3) { a = randInt(8, 35); b = randInt(2, 12); }
       else if (difficulty === 4) { a = randInt(20, 70); b = randInt(10, 50); }
       else { a = randInt(30, 120); b = randInt(2, 25); }
+
+      // Ensure subtraction never goes negative (mobile numeric keyboard has no minus)
+      if (op === "-" && a < b) { const tmp = a; a = b; b = tmp; }
 
       if (op === "+") answer = a + b;
       if (op === "-") answer = a - b;
@@ -1479,7 +1207,7 @@ function renderMathRace() {
     eq.textContent = "GO!";
     await sleep(250);
     ansEl().disabled = false;
-    safeFocus(ansEl());
+    ansEl().focus();
     started = true;
     showProblem();
   }
@@ -1488,9 +1216,9 @@ function renderMathRace() {
     current = makeProblem();
     eq.textContent = current.text;
     ansEl().value = "";
-    safeFocus(ansEl());
+    ansEl().focus();
 
-    const PER_Q_MS = 5000;
+    const PER_Q_MS = 5000; // 5 seconds
     deadline = performance.now() + PER_Q_MS;
 
     if (timer) clearInterval(timer);
@@ -1574,8 +1302,25 @@ function renderMathRace() {
     }
   }
 
+  // Mobile "Done"/check key often triggers change/blur instead of keydown Enter.
+  // We listen to multiple events and debounce to avoid double-submits.
+  let _lastSubmitMs = 0;
+  function submitDebounced() {
+    const t = Date.now();
+    if (t - _lastSubmitMs < 200) return;
+    _lastSubmitMs = t;
+    submit();
+  }
+
   ansEl().addEventListener("keydown", (e) => {
-    if (e.key === "Enter") submit();
+    if (e.key === "Enter") submitDebounced();
+  });
+  ansEl().addEventListener("keyup", (e) => {
+    if (e.key === "Enter") submitDebounced();
+  });
+  ansEl().addEventListener("change", () => {
+    // Fired when user taps Done/✓ on mobile keyboards
+    submitDebounced();
   });
 
   updateHUD();
@@ -1593,9 +1338,7 @@ function renderMathRace() {
 /* ---------------- End: replay each game without questions ---------------- */
 
 function renderEnd() {
-  // Upload when reaching recap page
   flushLogs();
-
   const best = getBest();
   els.screen.appendChild(card("You Escaped", "Your responses have been saved and submitted, but get a highscore. The leaderboard will be posted in #ride-responses"));
 
@@ -1608,9 +1351,9 @@ function renderEnd() {
     <div class="p"><span class="kbd">Verbal</span> best score: ${best.verbal.bestScore}</div>
     <div class="p"><span class="kbd">Math</span> best score: ${best.math.bestScore}</div>
     <div class="puzzle-hint">
-      Your responses have been sent. Every time you set a new high score, it’s saved and updated too.
-      Replay the games on the right panel to improve your scores.
-    </div>
+  Your responses have been sent. Every time you set a new high score, it’s saved and updated too.
+  Replay the games on the right panel to improve your scores.
+</div>
   `;
   els.screen.appendChild(c);
 
@@ -1622,11 +1365,6 @@ function renderEnd() {
     setStage(stage);
   };
 
-  // Edit answers button
-  els.panelActions.appendChild(button("Review / Edit Answers", async () => {
-    await openEditAnswersModal();
-  }, "btn secondary"));
-
   els.panelActions.appendChild(button("Play Simon", () => go("g1"), "btn ok"));
   els.panelActions.appendChild(button("Play Memory Match", () => go("g2"), "btn ok"));
   els.panelActions.appendChild(button("Play Verbal Memory", () => go("g3"), "btn ok"));
@@ -1635,8 +1373,7 @@ function renderEnd() {
   els.panelActions.appendChild(button("Submit Another Response", async () => {
     [
       "etl_participantId","etl_sessionId","etl_startedAt","etl_stage",
-      "etl_best","etl_localLog","etl_mode",
-      "etl_answers","etl_logBuffer"
+      "etl_best","etl_localLog","etl_mode"
     ].forEach(k => localStorage.removeItem(k));
     location.reload();
   }, "btn danger"));
@@ -1657,21 +1394,11 @@ function shuffle(arr) {
 
 /* ---------------- Boot ---------------- */
 (function init() {
-  // Mobile compatibility first
-  ensureViewportMeta();
-  injectMobileStylePatch();
-  setupVisualViewportHandlers();
-  setViewportVars();
+  injectMobilePatchCSS();
 
-  // Upload on leaving the page (best-effort, no lag)
-  window.addEventListener("pagehide", () => {
-    flushLogsOnExit();
-  });
-
-  // Keep beforeunload too as fallback
-  window.addEventListener("beforeunload", () => {
-    flushLogsOnExit();
-  });
+  // Upload on leaving the page (best-effort)
+  window.addEventListener("pagehide", flushLogsOnExit);
+  window.addEventListener("beforeunload", flushLogsOnExit);
 
   updateBadges();
   setStatus("Loaded.");
