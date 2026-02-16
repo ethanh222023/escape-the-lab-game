@@ -680,6 +680,7 @@ function renderSurvey4() {
   els.panelBody.textContent = "Survey block 4.";
   els.panelActions.appendChild(button("Open Terminal", async () => {
     await runTerminalSurvey("Q4", [
+      { id: "AirBandB", type: "mc", prompt: "Were you confirmed to be staying at the AirB&B? (Only say yes if you were told you were)", options: ["Yes, I am staying at the AirB&B", "No, I am staying at the Hotel"], required: true },
       { id: "Suggestions", type: "text", prompt: "Do you have any ride form questions? Place any potential future questions here and I may pick them for the future.", required: false }
     ]);
     await logEvent("session_complete", { finishedAt: nowISO() });
@@ -872,7 +873,7 @@ function initMemoryState(pairs) {
 
 function renderVerbalMemory() {
   const best = getBest();
-  els.screen.appendChild(card("Game 3: Verbal Memory", "Seen or New. 3 lives. No back-to-back repeats."));
+  els.screen.appendChild(card("Game 3: Verbal Memory", "Select New if the word hasn't come up before. Select Seen if it has. You have 3 lives"));
 
   const hud = document.createElement("div");
   hud.className = "game-hud";
@@ -1031,7 +1032,7 @@ function buildWordPool() {
 
 function renderMathRace() {
   const best = getBest();
-  els.screen.appendChild(card("Game 4: Math Race", "5 seconds per question."));
+  els.screen.appendChild(card("Game 4: Math Race", "5 seconds per question. Don't mess up"));
 
   const hud = document.createElement("div");
   hud.className = "game-hud";
@@ -1309,6 +1310,7 @@ window.addEventListener("beforeunload", () => {
   }
 
 })();
+
 
 
 
